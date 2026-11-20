@@ -328,6 +328,7 @@
     return `<h3>능력치</h3>${rows}
       <div class="attr"><span class="lab">멘탈</span><span class="bar"><i style="width:${p.mental}%"></i></span><span class="n">${Math.floor(p.mental)}</span></div>
       <p class="muted" style="font-size:13px;margin:8px 0 0">${SIM.potentialComment(p)}</p>
+      <p class="muted" style="font-size:13px;margin:4px 0 0">${SIM.workComment(p)}</p>
       <p class="small" style="margin-top:6px">A매치 ${p.intl.caps}경기 ${p.intl.goals}골 · 연령별 대표 ${p.intl.youthCaps}경기${p.exempt ? ' · 병역 면제' : p.militaryDone ? ' · 병역 마침' : ''}</p>`;
   }
 

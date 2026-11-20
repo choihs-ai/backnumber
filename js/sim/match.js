@@ -248,8 +248,10 @@
     if (role === 'start') my += (ovr - my) * 0.15;
     const homeMul = fx.home ? 1.1 : 0.92;
     const scenes = fx.important && onPitch;
-    const lm = 1.3 * Math.exp((my - fx.oppStr) / 15) * homeMul * (scenes ? 0.85 : 1);
-    const lo = (1.3 * Math.exp((fx.oppStr - my) / 15)) / homeMul * (scenes ? 0.85 : 1);
+    // 장면에서 나오는 골·실점만큼 자동 득점 기대값을 미리 덜어 둔다 (포지션마다 장면 종류가 달라서 따로)
+    const cut = scenes ? { FW: [0.7, 1], MF: [0.82, 0.82], DF: [0.95, 0.62], GK: [1, 0.55] }[p.pos] : [1, 1];
+    const lm = 1.3 * Math.exp((my - fx.oppStr) / 15) * homeMul * cut[0];
+    const lo = (1.3 * Math.exp((fx.oppStr - my) / 15)) / homeMul * cut[1];
     const res = { fx, role, mins: 0, gm: poisson(G, lm), go: poisson(G, lo), goals: 0, assists: 0, saves: 0, ratingAdj: 0, sceneN: 0, sceneOk: 0, notes: [] };
     res.mins = role === 'start' ? (chance(G, 0.22) ? ri(G, 62, 85) : 90) : role === 'sub' ? ri(G, 12, 30) : 0;
 
@@ -257,7 +259,7 @@
       const share = res.mins / 90;
       const rel = (k) => (p.attrs[k] - fx.myStr);
       let gShare = 0, aShare = 0;
-      if (p.pos === 'FW') { gShare = clamp(0.22 + rel('sho') / 120, 0.1, 0.4); aShare = clamp(0.12 + rel('pas') / 150, 0.05, 0.22); }
+      if (p.pos === 'FW') { gShare = clamp(0.18 + rel('sho') / 120, 0.08, 0.36); aShare = clamp(0.12 + rel('pas') / 150, 0.05, 0.22); }
       if (p.pos === 'MF') { gShare = clamp(0.08 + rel('sho') / 160, 0.03, 0.18); aShare = clamp(0.2 + rel('pas') / 110, 0.08, 0.34); }
       if (p.pos === 'DF') { gShare = 0.035; aShare = 0.06; }
       if (p.pos === 'GK') { aShare = 0.005; }

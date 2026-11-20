@@ -17,7 +17,7 @@
   const ASIA = ['일본', '이란', '호주', '사우디아라비아', '우즈베키스탄', '카타르', '이라크', '요르단', '아랍에미리트', '중국'];
   const NATIONS_U23 = { 일본: 66, 우즈베키스탄: 63, 사우디아라비아: 61, 이란: 62, 카타르: 60, 이라크: 60, 태국: 56, 베트남: 57, 중국: 58, 호주: 62,
     스페인: 72, 프랑스: 72, 브라질: 72, 아르헨티나: 71, 이집트: 63, 모로코: 66, 미국: 65, 말리: 63, 파라과이: 64 };
-  const KOREA = { A: 75, U23: 64, U20: 60 };
+  const KOREA = { A: 75, U23: 62, U20: 60 };
 
   function nationFx(G, pool, names, round, comp, important) {
     const name = pick(G, names);
@@ -170,7 +170,7 @@
   };
 
   // ── 훈련
-  const FATIGUE = { train: 6, focus: 14, rest: -30, video: 2, sns: 2 };
+  const FATIGUE = { train: 6, focus: 11, rest: -30, video: 2, sns: 2 };
   SIM.ACTIONS = {
     train: { name: '기본 훈련', icon: 'train', desc: '포지션에 맞게 고르게 성장' },
     focus: { name: '집중 훈련', icon: 'focus', desc: '능력치 하나를 크게. 피로가 많이 쌓인다' },
@@ -179,12 +179,17 @@
     sns: { name: 'SNS·미디어', icon: 'sns', desc: '인기 상승. 가끔 논란이 생긴다', pro: true },
   };
 
-  function grow(G, action, focusKey, minsRatio) {
+  // 성실도: 꾸준히 훈련하면 잠재력보다 최대 5 높이, 게으르면 최대 5 낮게 끝난다
+  const WORK = { train: 0.06, focus: 0.08, video: 0.02, sns: -0.06, rest: 0 };
+  function grow(G, action, focusKey, minsRatio, fatigueBefore) {
     const p = G.p;
+    let dw = WORK[action];
+    if (action === 'rest' && p.injury === 0 && fatigueBefore < 35) dw = -0.06;
+    p.work = clamp((p.work || 0) + dw, -5, 5);
     const ovr = SIM.ovr(p);
     const age = p.age;
     const ageC = age <= 19 ? 1 : age <= 23 ? 0.8 : age <= 27 ? 0.4 : age <= 30 ? 0.12 : 0;
-    const gap = clamp((p.pot - ovr) / 20, 0.08, 1);
+    const gap = clamp((p.pot + p.work - ovr) / 20, 0.08, 1);
     const base = 0.4 * ageC * gap * (1 + 0.5 * minsRatio);
     const w = SIM.WEIGHTS[p.pos];
     const keys = SIM.attrKeys(p);
@@ -192,7 +197,7 @@
     keys.forEach((k) => {
       let m = 0;
       if (action === 'train') m = 0.6 + 2.4 * w[k];
-      else if (action === 'focus') m = k === focusKey ? 2.4 : 0.3;
+      else if (action === 'focus') m = k === focusKey ? 3.2 : 0.35;
       else if (action === 'video' || action === 'sns') m = 0.3 * (0.6 + 2.4 * w[k]);
       // 경기만 뛰어도 조금은 큰다
       m += 0.25 * minsRatio;
@@ -285,6 +290,7 @@
     const p = G.p, S = G.season;
     if (p.injury > 0 && (action === 'train' || action === 'focus')) action = 'rest';
     if (action === 'sns' && !SIM.isPro(G)) action = 'train';
+    const fatigueBefore = p.fatigue;
     p.fatigue = clamp(p.fatigue + FATIGUE[action], 0, 100);
     if (action === 'video') { p.mental = clamp(p.mental + 1.5, 0, 99); p.flags.videoBonus = 2; }
     if (action === 'sns') { p.pop += 3; if (chance(G, 0.1)) p.flags.pendingControversy = true; }
@@ -292,7 +298,7 @@
     // 대표팀 소집 (A매치 주간)
     if (INTL_WINDOWS.includes(G.week) && SIM.isPro(G)) {
       const was = S.called;
-      S.called = aCallScore(G) >= 70 || p.flags.surpriseCall;
+      S.called = aCallScore(G) >= 73 || p.flags.surpriseCall;
       if (S.called && p.flags.surpriseCall) p.flags.surpriseCall = false;
       if (S.called && !was && p.injury === 0) await io.show('callup', { kind: 'A', first: p.intl.caps === 0 });
       if (p.injury > 0) S.called = false;
@@ -317,7 +323,7 @@
       results.push(res);
       if (!fx.intl) { mins += res.mins; possible += 90; }
     }
-    const gains = grow(G, action, focusKey, possible ? mins / possible : 0);
+    const gains = grow(G, action, focusKey, possible ? mins / possible : 0, fatigueBefore);
 
     await SIM.maybeEvent(G, io);
     await io.show('week', { week: G.week, results, action, gains });
@@ -476,7 +482,7 @@
     const S = G.season;
     const value = SIM.ovr(p) + ((SIM.avg(S.ratings) || 6.5) - 6.7) * 5 + (S.cup.won ? 3 : 0) + p.pop * 0.05 + (from === 'univ' ? 2 : 0);
     const offers = [];
-    const kclubs = Object.values(D.CLUBS).filter((c) => (c.league === 'k1' || c.league === 'k2') && c.id !== D.MILITARY_CLUB && value >= c.str - 9);
+    const kclubs = Object.values(D.CLUBS).filter((c) => (c.league === 'k1' || c.league === 'k2') && c.id !== D.MILITARY_CLUB && value >= c.str - 6);
     kclubs.sort((a, b) => b.rep + gauss(G) * 8 - a.rep).slice(0, 3).forEach((c) => offers.push(makeOffer(G, c, 'transfer')));
     if (value >= 66) {
       const eu = Object.values(D.CLUBS).filter((c) => ['be', 'nl', 'pt'].includes(c.league) && c.str <= 76);
@@ -546,7 +552,7 @@
   function selected(G, t) {
     const p = G.p, ovr = SIM.ovr(p);
     if (p.injury > 2) return false;
-    if (t.team === 'A') return aCallScore(G) >= (t.id === 'wc' ? 72 : 70);
+    if (t.team === 'A') return aCallScore(G) >= (t.id === 'wc' ? 75 : 73);
     if (t.team === 'U20') return ovr >= 60 + (SIM.isPro(G) ? -2 : 0);
     if (t.team === 'U23') {
       if (p.age < 19) return false;
@@ -626,18 +632,19 @@
     const avg = SIM.avg(S.ratings) || 6;
     const appsRatio = clamp(S.apps / Math.max(1, S.lg.gp), 0, 1);
     const posW = { FW: 1, MF: 1.3, DF: 2, GK: 0 }[p.pos];
-    let s = (avg - 6.6) * 40 * appsRatio + (S.goals + S.assists) * posW * lg.level * 0.9;
-    if (p.pos === 'GK') s += S.cs * 2.2 * lg.level;
-    const tw = { league: 15, cont: 25 };
+    let s = (avg - 6.6) * 40 * appsRatio * (0.3 + 0.7 * lg.level) + (S.goals + S.assists) * posW * lg.level * 0.9;
+    if (p.pos === 'GK') s = s * 0.7 + S.cs * 1.2 * lg.level;
+    const tw = { league: 15, cont: 30 };
     S.trophies.forEach((t) => {
-      if (t.includes('월드컵')) s += 30;
+      if (t.includes('월드컵')) s += 35;
       else if (t.includes('아시안컵')) s += 12;
       else if (t.includes('챔피언스리그')) s += tw.cont * (t.includes('UEFA') ? 1 : 0.5);
       else if (t.includes('우승') && t.includes(lg.name)) s += tw.league * lg.level;
       else s += 4;
     });
     (S.tour || []).forEach((t) => { if (t.id === 'wc') s += t.goals * 3; });
-    s += S.sceneOk * 1.0 + p.pop / 20;
+    S.awards.forEach((w) => { if (w.includes('MVP')) s += 10 * lg.level; else if (w.includes('득점왕')) s += 8 * lg.level; else if (w.includes('도움왕')) s += 5 * lg.level; });
+    s += S.sceneOk * 1.5 + p.pop / 20;
     return Math.round(s * 10) / 10;
   }
 
@@ -648,12 +655,12 @@
     for (let i = 0; i < 30; i++) {
       const nat = pick(G, NATS);
       const c = SIM.club(pick(G, BIG));
-      list.push({ name: SIM.worldName(G, nat), club: c.name, score: 126 - i * 2.0 + gauss(G) * 4 });
+      list.push({ name: SIM.worldName(G, nat), club: c.name, score: 121 - i * 1.55 + gauss(G) * 4 });
     }
     list.sort((a, b) => b.score - a.score);
     const rank = 1 + list.filter((x) => x.score > mine).length;
     const S = G.season;
-    if (p.pos === 'GK' && mine >= 70) award(G, '올해의 골키퍼');
+    if (p.pos === 'GK' && mine >= 60) award(G, '올해의 골키퍼');
     if (p.age <= 21 && mine >= 55) award(G, '21세 이하 최고 선수상');
     if (rank <= 30) {
       const me = { name: p.name, club: SIM.club(S.club).name, score: mine, me: true };

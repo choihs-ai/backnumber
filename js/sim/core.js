@@ -73,8 +73,17 @@
   SIM.club = (id) => D.CLUBS[id];
   SIM.league = (id) => D.LEAGUES[D.CLUBS[id].league];
 
+  SIM.workComment = function (p) {
+    const w = p.work || 0;
+    if (w >= 3.5) return '코치: "훈련장에 제일 먼저 나와서 제일 늦게 간다."';
+    if (w >= 1.5) return '코치: "성실하다. 이대로만 하면 된다."';
+    if (w > -1.5) return '코치: "할 때는 하는데 들쭉날쭉하다."';
+    if (w > -3.5) return '코치: "재능을 낭비하고 있다."';
+    return '코치: "요즘 훈련장에서 얼굴 보기가 힘들다."';
+  };
+
   SIM.potentialComment = function (p) {
-    const gap = p.pot - SIM.ovr(p);
+    const gap = p.pot + (p.work || 0) - SIM.ovr(p);
     if (p.pot >= 90) return gap > 15 ? '스카우트: "이런 재능은 몇 년에 한 번 나온다."' : '스카우트: "완성형에 가까운 특급 선수."';
     if (p.pot >= 82) return gap > 12 ? '스카우트: "성장 폭이 커 보인다."' : '스카우트: "지금도 충분히 좋다."';
     if (p.pot >= 74) return '스카우트: "꾸준히 하면 프로에서 자리를 잡을 선수."';
@@ -103,9 +112,9 @@
       pos, foot: opts.foot || 'R',
       look: opts.look || { skin: 1, hairStyle: 0, hairColor: 0 },
       attrs,
-      pot: SIM.clamp(Math.round(80 + SIM.gauss(G) * 7), 64, 96),
+      pot: SIM.clamp(Math.round(75 + SIM.gauss(G) * 7), 60, 94),
       mental: 50 + SIM.ri(G, -5, 5),
-      fatigue: 10, trust: 40, pop: 2,
+      fatigue: 10, trust: 40, pop: 2, work: 0,
       age: 16, grade: 1,
       club: school, school,
       squadNo: SIM.ri(G, 25, 33),

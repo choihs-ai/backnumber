@@ -1,5 +1,5 @@
 // 오프라인 캐시. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'backnumber-v2';
+const VERSION = 'backnumber-v3';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'data/clubs.js', 'data/names.js', 'data/events.js',
