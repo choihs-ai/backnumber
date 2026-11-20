@@ -63,7 +63,7 @@
     const club = SIM.club(p.club);
     G.week = 1;
     G.phase = 'week';
-    const incumbent = club.league === 'school' ? 53 + ri(G, 0, 4) : club.str + ri(G, -2, 4);
+    const incumbent = club.league === 'school' ? 52 + ri(G, 0, 4) : club.str + ri(G, -3, 2);
     const S = (G.season = {
       year: G.year, club: club.id, league: club.league, form: gauss(G) * 1.2, spot: incumbent,
       apps: 0, starts: 0, mins: 0, goals: 0, assists: 0, ratings: [], cs: 0, saves: 0, sceneN: 0, sceneOk: 0,
@@ -161,11 +161,12 @@
     const p = G.p;
     if (p.injury > 0) return 'out';
     const school = SIM.club(p.club).league === 'school';
-    const score = SIM.ovr(p) - spot + (trust - 50) / 10 - Math.max(0, p.fatigue - 30) / 15 + gauss(G) * 1.5;
+    const youth = p.age <= 22 ? 1.5 : 0;
+    const score = SIM.ovr(p) - spot + (trust - 50) / 10 + youth - Math.max(0, p.fatigue - 30) / 15 + gauss(G) * 1.8;
     if (score >= 0) return 'start';
-    if (score >= -4) return chance(G, 0.6) ? 'sub' : 'bench';
-    if (score >= -9 || school) return chance(G, school ? 0.25 : 0.3) ? 'sub' : 'bench';
-    return 'out';
+    if (score >= -4) return chance(G, 0.75) ? 'sub' : 'bench';
+    if (score >= -9 || school) return chance(G, school ? 0.35 : 0.45) ? 'sub' : 'bench';
+    return chance(G, 0.15) ? 'sub' : 'out';
   };
 
   // ── 훈련
@@ -230,7 +231,10 @@
       S.ratings.push(res.rating);
       if ((p.pos === 'GK' || p.pos === 'DF') && res.role === 'start' && res.go === 0) S.cs++;
       S.saves += res.saves;
-      p.trust = clamp(p.trust + (res.rating - 6.5) * 3, 0, 100);
+      p.trust = clamp(p.trust + (res.rating - (res.role === 'sub' ? 6.3 : 6.5)) * 3, 0, 100);
+      const base = SIM.club(S.club).str;
+      if (res.rating >= 7.2) S.spot = Math.max(base - 6, S.spot - 0.4);
+      else if (res.rating <= 6.0 && res.role === 'start') S.spot = Math.min(base + 5, S.spot + 0.3);
       p.pop += res.goals * (0.3 + lgLevel) + (res.rating >= 8 ? 1 : 0);
     }
     if (played) {
@@ -294,11 +298,16 @@
       if (p.injury > 0) S.called = false;
     }
 
+    if (S.openWeeks > 0) S.openWeeks--;
+    else if (SIM.isPro(G) && SIM.ovr(p) < S.spot + 2 && chance(G, 0.08)) {
+      S.openWeeks = ri(G, 2, 4);
+      await io.show('message', { title: '기회', text: pick(G, ['주전 경쟁자가 훈련 중에 발목을 다쳤다. 몇 주 동안 자리가 빈다.', '주전 경쟁자가 부진에 빠졌다. 감독이 다른 얼굴을 찾고 있다.', '감독이 로테이션을 돌리겠다고 했다. 이번 몇 주가 기회다.']) });
+    }
     const fixtures = buildFixtures(G);
     const results = [];
     let mins = 0, possible = 0;
     for (const fx of fixtures) {
-      let role = fx.intl ? SIM.selectRole(G, KOREA.A + 1, 55) : SIM.selectRole(G, S.spot, p.trust);
+      let role = fx.intl ? SIM.selectRole(G, KOREA.A + 1, 55) : SIM.selectRole(G, S.spot - (S.openWeeks > 0 ? 5 : 0), p.trust);
       const on = role === 'start' || role === 'sub';
       if (on && !fx.intl && SIM.isPro(G) && !p.debut) { fx.important = true; fx.tag = '데뷔전'; }
       if (on && S.firstMatch && !fx.intl) { fx.important = true; fx.tag = fx.tag || '이적 후 첫 경기'; S.firstMatch = false; }
@@ -372,7 +381,7 @@
 
   function roleFor(ovr, club) {
     const d = ovr - club.str;
-    return d >= 3 ? '핵심' : d >= -2 ? '주전 경쟁' : '로테이션';
+    return d >= 3 ? '핵심' : d >= 0 ? '주전 경쟁' : '로테이션';
   }
 
   function makeOffer(G, c, kind) {
@@ -392,7 +401,7 @@
     if (when === 'winter' && (G.season.firstMatch !== false && p.flags.joinedYear === G.year)) return [];
     if (when === 'winter' && !(avg >= 7.6 || (minsRatio < 0.15 && SIM.ovr(p) >= cur.str - 3) || p.flags.wantLoan)) return [];
     const pool = Object.values(D.CLUBS).filter((c) => !c.fake && c.id !== cur.id && c.id !== D.MILITARY_CLUB && c.id !== (p.loan && p.loan.from)
-      && value >= c.str - 4 && value <= c.str + 14);
+      && value >= c.str - 2.5 && value <= c.str + 14);
     const scored = pool.map((c) => ({ c, s: c.rep + gauss(G) * 10 + (value - c.str) * 1.5 })).sort((a, b) => b.s - a.s);
     const hot = avg >= 7.1 || value >= cur.str + 3;
     const n = when === 'winter' ? ri(G, 1, 2) : hot ? ri(G, 2, 4) : ri(G, 0, 2);
@@ -435,7 +444,7 @@
     }
     if (when === 'winter' && !offers.length) return;
     const choices = offers.slice();
-    if (canStay) choices.unshift({ kind: 'stay', club: cur.id });
+    if (canStay) choices.unshift({ kind: 'stay', club: cur.id, role: roleFor(SIM.ovr(p), cur) });
     if (when === 'summer' && p.age >= 33) choices.push({ kind: 'retire' });
     if (!choices.length || (choices.length === 1 && choices[0].kind === 'retire' && false)) choices.push({ kind: 'retire' });
     if (when === 'summer' && !choices.some((c) => c.kind !== 'retire')) {
@@ -455,6 +464,7 @@
     if (o.kind === 'loan') p.loan = { from: p.club, contract: p.contract };
     else { p.contract = o.years; if (p.loan) p.loan = null; }
     p.squadNo = o.number;
+    p.trust = { 핵심: 62, '주전 경쟁': 50, 로테이션: 42 }[o.role] || 48;
     p.flags.joinedYear = when === 'winter' ? G.year : G.year + 1;
     if (when === 'winter') changeClubMidSeason(G, o.club);
     else { p.club = o.club; p.flags.newClub = true; }
@@ -482,6 +492,7 @@
     if (o.kind === 'stay') return;
     if (o.kind === 'univ') { p.univYears = 0; }
     p.club = o.club; p.contract = o.years; p.squadNo = o.number; p.flags.newClub = true;
+    p.trust = o.kind === 'univ' ? 52 : 46;
   }
 
   // ── 시상
@@ -740,6 +751,11 @@
     if (G.phase === 'retired') return;
     G.year++;
     SIM.startSeason(G);
+  };
+
+  SIM.retireNow = async function (G, io) {
+    if (G.week > 1 || G.season.apps) G.p.career.push(seasonRecord(G, true));
+    await retire(G, io, '스스로 내린 결정이었다.');
   };
 
   SIM._internal = { leaguePool, playerValue, ballonScore, aCallScore };

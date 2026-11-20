@@ -224,6 +224,7 @@
       if (G.phase === 'week') {
         const { action, focus } = await hub();
         if (action === 'quit') { save(); return title(); }
+        if (action === 'retired') break;
         G._before = { ovr: SIM.ovr(G.p), attrs: Object.assign({}, G.p.attrs) };
         await SIM.playWeek(G, action, io, focus);
         delete G._before;
@@ -291,6 +292,13 @@
       if (v === 'sound') { Sound.on = settings.sound = !settings.sound; store.set('settings', settings); continue; }
       if (v === 'code') { save(); await codeScreen(true); continue; }
       if (v === 'help') { await helpScreen(); continue; }
+      if (v === 'retire') {
+        render(`${top('은퇴')}<div class="paper"><div class="kicker">${G.year} 시즌 · ${G.week}주차</div><h2>정말 축구화를 벗을까?</h2>
+          <p>${p.age}세. 지금까지의 기록으로 명예의 전당에 오르고 이 저장 칸은 비워진다. 되돌릴 수 없다.</p></div>
+          <div class="btn-row"><button class="btn" data-v="no">아직 아니다</button><button class="btn primary" data-v="yes">은퇴한다</button></div>`);
+        if ((await choose()) === 'yes') { await SIM.retireNow(G, io); return { action: 'retired' }; }
+        continue;
+      }
       if (v === 'focus') {
         const k = await focusPicker();
         if (!k) continue;
@@ -351,7 +359,8 @@
       <button class="btn slim" data-v="sound"><span class="t">소리 ${settings.sound ? '끄기' : '켜기'}</span></button>
       <button class="btn slim" data-v="code"><span class="t">세이브 코드</span><span class="d">지금 커리어를 텍스트로 백업</span></button>
       <button class="btn slim" data-v="help"><span class="t">게임 설명</span></button>
-      <button class="btn slim" data-v="quit"><span class="t">저장하고 타이틀로</span><span class="d">매 주차가 끝날 때마다 자동 저장된다</span></button>`;
+      <button class="btn slim" data-v="quit"><span class="t">저장하고 타이틀로</span><span class="d">매 주차가 끝날 때마다 자동 저장된다</span></button>
+      <button class="btn slim" data-v="retire"><span class="t">지금 은퇴하기</span><span class="d">나이와 상관없이 여기서 커리어를 끝낸다</span></button>`;
   }
 
   function trophyIcon(name) {
