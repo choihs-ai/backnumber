@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>등번호 에셋 시트</title>
+<style>
+  @font-face { font-family: 'Galmuri11'; src: url('fonts/galmuri/Galmuri11.woff2') format('woff2'); }
+  @font-face { font-family: 'Galmuri11'; font-weight: 700; src: url('fonts/galmuri/Galmuri11-Bold.woff2') format('woff2'); }
+  @font-face { font-family: 'Galmuri9'; src: url('fonts/galmuri/Galmuri9.woff2') format('woff2'); }
+  :root { --paper: #F2EBDD; --ink: #1E1E1E; --grass: #2F6B3A; --red: #C8352B; --rule: #CFC6B4; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--paper); color: var(--ink); font-family: -apple-system, 'Apple SD Gothic Neo', sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 20px 16px 48px; }
+  header { border-bottom: 3px solid var(--ink); padding-bottom: 8px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: baseline; }
+  h1 { font-family: 'Galmuri11'; font-weight: 700; font-size: 26px; margin: 0; letter-spacing: -0.5px; }
+  header span { font-family: 'Galmuri9'; font-size: 12px; }
+  h2 { font-family: 'Galmuri11'; font-weight: 700; font-size: 15px; margin: 26px 0 10px; padding-bottom: 4px; border-bottom: 1px solid var(--ink); display: flex; gap: 8px; align-items: baseline; }
+  h2 b { color: var(--red); font-family: 'Galmuri9'; font-weight: 400; font-size: 12px; }
+  .row { display: flex; flex-wrap: wrap; gap: 14px 10px; }
+  figure { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  figcaption { font-family: 'Galmuri9'; font-size: 11px; color: #4A453E; }
+  canvas, img { image-rendering: pixelated; display: block; }
+  .card { border: 1px solid var(--rule); padding: 8px 8px 6px; background: #F7F2E7; }
+  .note { font-size: 13px; line-height: 1.6; color: #4A453E; margin: 6px 0 0; }
+  .scene { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; }
+  .scene figure { align-items: stretch; }
+  .scene p { margin: 0; font-size: 13px; line-height: 1.5; }
+  .scene p em { font-style: normal; color: var(--red); }
+  .skins { display: grid; grid-template-columns: auto repeat(6, auto); gap: 4px 6px; align-items: center; justify-content: start; }
+  .skins .lab { font-family: 'Galmuri9'; font-size: 11px; color: #4A453E; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>등번호 · 에셋 시트</h1><span>2단계 v0.1</span></header>
+
+  <h2>머리 모양 <b>6종</b></h2>
+  <div class="row" id="hairs"></div>
+
+  <h2>피부 × 머리색 <b>4 × 6</b></h2>
+  <div class="skins" id="skins"></div>
+
+  <h2>유니폼 무늬 <b>4종 + 골키퍼</b></h2>
+  <div class="row" id="kits"></div>
+
+  <h2>세리머니 <b>3종 · 2프레임 반복</b></h2>
+  <div class="row" id="celebs"></div>
+
+  <h2>장면 선택 미니 피치</h2>
+  <div class="scene" id="scenes"></div>
+
+  <h2>기본 배지 <b>방패 5종 + 약자</b></h2>
+  <div class="row" id="badges"></div>
+  <p class="note">emblems 폴더에 클럽ID.png를 넣으면 그 클럽은 이 배지 대신 넣은 이미지가 나온다.</p>
+
+  <h2>아이콘 <b>16px</b></h2>
+  <div class="row" id="icons"></div>
+
+  <h2>트로피 <b>32px</b></h2>
+  <div class="row" id="trophies"></div>
+</main>
+
+<script src="js/pixel/core.js"></script>
+<script src="js/pixel/player.js"></script>
+<script src="js/pixel/pitch.js"></script>
+<script src="js/pixel/badge.js"></script>
+<script src="js/pixel/icons.js"></script>
+<script src="js/pixel/trophies.js"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const fig = (el, cap, card) => {
+    const f = document.createElement('figure');
+    if (card) f.className = 'card';
+    f.appendChild(el);
+    if (cap) { const c = document.createElement('figcaption'); c.textContent = cap; f.appendChild(c); }
+    return f;
+  };
+
+  const KITS = {
+    solid:   { primary: '#1F4E9C', secondary: '#E9B92E', pattern: 'solid',   shorts: '#1F4E9C', socks: '#1F4E9C' },
+    vstripe: { primary: '#C8352B', secondary: '#1E1E1E', pattern: 'vstripe', shorts: '#1E1E1E', socks: '#1E1E1E' },
+    hstripe: { primary: '#2F6B3A', secondary: '#F2EBDD', pattern: 'hstripe', shorts: '#F2EBDD', socks: '#2F6B3A' },
+    half:    { primary: '#F2EBDD', secondary: '#C8352B', pattern: 'half',    shorts: '#F2EBDD', socks: '#C8352B' },
+  };
+  const GK_KIT = { primary: '#E0C341', secondary: '#1E1E1E', pattern: 'solid', shorts: '#1E1E1E', socks: '#E0C341' };
+
+  PX.HAIR_STYLES.forEach((h, i) =>
+    $('hairs').appendChild(fig(PX.playerCanvas({ skin: 1, hairColor: 0, hairStyle: i, kit: KITS.solid }, 4), h.name)));
+
+  const sk = $('skins');
+  sk.appendChild(document.createElement('span'));
+  PX.HAIR_COLORS.forEach((c) => { const s = document.createElement('span'); s.className = 'lab'; s.textContent = c.name; sk.appendChild(s); });
+  PX.SKIN.forEach((s, si) => {
+    const l = document.createElement('span'); l.className = 'lab'; l.textContent = s.name; sk.appendChild(l);
+    PX.HAIR_COLORS.forEach((_, hi) =>
+      sk.appendChild(PX.playerCanvas({ skin: si, hairColor: hi, hairStyle: (si + hi) % 6, kit: KITS.hstripe }, 3)));
+  });
+
+  const names = { solid: '단색', vstripe: '세로줄', hstripe: '가로줄', half: '반반' };
+  Object.keys(KITS).forEach((k, i) =>
+    $('kits').appendChild(fig(PX.playerCanvas({ skin: i % 4, hairColor: (i * 2) % 6, hairStyle: (i + 2) % 6, kit: KITS[k] }, 4), names[k])));
+  $('kits').appendChild(fig(PX.playerCanvas({ skin: 2, hairColor: 0, hairStyle: 5, kit: GK_KIT, gk: true }, 4), '골키퍼 (장갑)'));
+
+  const anims = [];
+  [['fist', '주먹 쥐기'], ['plane', '비행기'], ['sky', '손가락 하늘']].forEach(([pose, label], i) => {
+    const spec = { skin: i, hairColor: [2, 0, 3][i], hairStyle: [0, 3, 1][i], kit: [KITS.vstripe, KITS.solid, KITS.half][i], pose };
+    const c = PX.playerCanvas(Object.assign({ frame: 0 }, spec), 4);
+    const frames = [0, 1].map((f) => PX.playerCanvas(Object.assign({}, spec, { frame: f }), 4));
+    anims.push({ c, frames });
+    $('celebs').appendChild(fig(c, label));
+    frames.forEach((f, n) => $('celebs').appendChild(fig(f, label + ' ' + (n + 1))));
+  });
+  let tick = 0;
+  setInterval(() => {
+    tick++;
+    anims.forEach(({ c, frames }) => {
+      const ctx = c.getContext('2d');
+      ctx.clearRect(0, 0, c.width, c.height);
+      ctx.drawImage(frames[tick % 2], 0, 0);
+    });
+  }, 280);
+
+  const SCENES = [
+    {
+      text: '박스 바로 앞. 수비 둘이 붙었고 <em>오른쪽 동료가 완전히 비었다.</em>',
+      scene: { me: [44, 46], ball: [46, 42], mates: [[73, 32], [20, 54]], opps: [[39, 38], [52, 40], [64, 22], [30, 26]], gk: [48, 12],
+               trail: [[47, 41], [71, 33]] },
+      cap: '공격수 · 패스 / 드리블 / 슛',
+    },
+    {
+      text: '수비 뒷공간이 뚫렸다. <em>골키퍼와 1대1</em>, 각도는 왼쪽이 넓다.',
+      scene: { me: [58, 26], ball: [56, 22], mates: [[28, 46]], opps: [[66, 38], [42, 44]], gk: [51, 13] },
+      cap: '골키퍼 시점에선 같은 장면을 반대로 본다',
+    },
+  ];
+  SCENES.forEach(({ text, scene, cap }) => {
+    const c = document.createElement('canvas');
+    c.width = 384;
+    PX.drawPitch(c, scene, 4);
+    c.style.width = '100%'; c.style.height = 'auto';
+    const f = fig(c, cap, true);
+    const p = document.createElement('p'); p.innerHTML = text;
+    f.insertBefore(p, f.lastChild);
+    $('scenes').appendChild(f);
+  });
+
+  const CLUBS = [
+    { id: 'ulsan', short: 'UHD', colors: ['#1F4E9C', '#E9B92E'], badge: 'band', name: '울산 HD' },
+    { id: 'jeonbuk', short: 'JHM', colors: ['#14593A', '#E7DB9E'], badge: 'ring', name: '전북 현대' },
+    { id: 'seoul', short: 'FCS', colors: ['#C8352B', '#1E1E1E'], badge: 'half', name: 'FC 서울' },
+    { id: 'pohang', short: 'PHS', colors: ['#1E1E1E', '#C8352B'], badge: 'stripes', name: '포항 스틸러스' },
+    { id: 'suwon', short: 'SSB', colors: ['#2050A8', '#F2EBDD'], badge: 'diag', name: '수원 삼성' },
+    { id: 'daejeon', short: 'DHC', colors: ['#7A1E3A', '#E9B92E'], badge: 'band', name: '대전 하나' },
+  ];
+  CLUBS.forEach((c) => $('badges').appendChild(fig(PX.badgeElement(c, 4), c.name)));
+
+  Object.entries(PX.ICONS).forEach(([k, label]) => $('icons').appendChild(fig(PX.iconCanvas(k, 4), label)));
+  Object.entries(PX.TROPHIES).forEach(([k, label]) => $('trophies').appendChild(fig(PX.trophyCanvas(k, 3), label)));
+</script>
+</body>
+</html>
