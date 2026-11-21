@@ -68,7 +68,7 @@
       title: '주장 추천',
       text: () => '동기들이 나를 주장으로 추천했다. 감독님도 생각해 보라고 했다.',
       choices: [
-        { label: '맡는다', go: (G, X) => { X.trust(6); X.fat(4); X.mental(2); return '완장을 찼다. 해야 할 말이 많아졌다.'; } },
+        { label: '맡는다', go: (G, X) => { X.trust(6); X.fat(4); X.mental(2); G.p.flags.captain = true; return '완장을 찼다. 해야 할 말이 많아졌다.'; } },
         { label: '경기에만 집중하겠다', go: (G, X) => { X.mental(1); return '정중하게 사양했다. 감독님은 고개를 끄덕였다.'; } },
       ],
     },

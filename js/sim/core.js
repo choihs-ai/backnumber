@@ -114,7 +114,7 @@
       attrs,
       pot: SIM.clamp(Math.round(75 + SIM.gauss(G) * 7), 60, 94),
       mental: 50 + SIM.ri(G, -5, 5),
-      fatigue: 10, trust: 40, pop: 2, work: 0,
+      fatigue: 10, trust: 40, pop: 2, work: 0, sp: 40 + SIM.ri(G, 0, 10),
       age: 16, grade: 1,
       club: school, school,
       squadNo: SIM.ri(G, 25, 33),

@@ -1,15 +1,11 @@
 // 훈련 방식·이적 방식별 커리어 결과 비교
-const fs = require('fs'), path = require('path'), vm = require('vm');
-const ROOT = path.join(__dirname, '..');
-['data/clubs.js', 'data/names.js', 'data/events.js', 'js/sim/core.js', 'js/sim/match.js', 'js/sim/season.js', 'js/sim/events.js']
-  .forEach((f) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, f), 'utf8')));
-const SIM = globalThis.SIM, D = globalThis.DATA;
+const { SIM, D, makeIO } = require('./load');
 const BIG5 = ['epl', 'liga', 'seriea', 'bund', 'ligue1'];
 
 const TRAIN = {
   train: (G) => (G.p.injury ? 'rest' : G.p.fatigue > 60 ? 'rest' : 'train'),
   focus: (G) => (G.p.injury ? 'rest' : G.p.fatigue > 60 ? 'rest' : 'focus'),
-  smart: (G) => (G.p.injury ? 'rest' : G.p.fatigue >= 55 ? 'rest' : G.week % 4 === 0 ? 'video' : G.p.fatigue < 30 ? 'focus' : 'train'),
+  smart: (G) => (G.p.injury ? 'rest' : G.p.fatigue >= 60 ? 'rest' : G.p.fatigue >= 45 ? 'recovery' : G.week % 6 === 0 ? 'video' : G.week % 6 === 3 ? 'special' : G.week % 6 === 4 && G.p.age >= 19 ? 'setpiece' : 'train'),
   random: (G) => SIM.pick(G, ['train', 'focus', 'rest', 'video', 'sns', 'train']),
   lazy: (G) => SIM.pick(G, ['rest', 'sns', 'video', 'rest']),
 };
@@ -19,6 +15,7 @@ const OFFER = {
     const ok = o.map((x, i) => [x, i]).filter(([x]) => x.kind !== 'retire');
     const good = ok.filter(([x]) => x.role && x.role !== '로테이션' || x.kind === 'loan');
     const pool = good.length ? good : ok;
+    if (!pool.length) return 0;
     let b = pool[0][1], bs = -1e9;
     pool.forEach(([x, i]) => { const s = SIM.club(x.club).rep + (x.role === '핵심' ? 6 : 0) + (x.kind === 'univ' && SIM.ovr(G.p) < 56 ? 50 : 0); if (s > bs) { bs = s; b = i; } });
     return b;
@@ -26,31 +23,11 @@ const OFFER = {
   rep: (G, o) => { let b = 0, bs = -1e9; o.forEach((x, i) => { if (x.kind === 'retire') return; const s = SIM.club(x.club).rep; if (s > bs) { bs = s; b = i; } }); return b; },
   random: (G, o) => { const ok = o.map((x, i) => i).filter((i) => o[i].kind !== 'retire'); return SIM.pick(G, ok.length ? ok : [0]); },
 };
-function sceneSmart(s) {
-  if (s.kind === 'attack') {
-    if (s.freeMate && (s.press === 2 || s.dist === 'far' || (s.dist === 'near' && s.side !== 'center'))) return 0;
-    if (s.dist === 'far' && !s.gkOut) return s.press === 0 ? 1 : 0;
-    if (s.tip === 'slowDef') return 1;
-    if (s.press === 0) return s.dist === 'near' ? 2 : 1;
-    return 2;
-  }
-  if (s.kind === 'defend') return s.inBox ? 1 : s.type === 'cross' ? 2 : 0;
-  if (s.type === '1v1') return { long: 0, calm: 1, fast: 2 }[s.variant];
-  if (s.type === 'pk') return s.centerLover ? 1 : s.foot === 'R' ? 2 : 0;
-  return s.variant === 'crowded' ? 0 : 1;
-}
-
 async function run(n, train, offer, scene, pos) {
   const out = [];
   for (let i = 0; i < n; i++) {
     const G = SIM.newGame({ seed: 9001 + i * 104729, name: 't', pos: pos || ['FW', 'MF', 'DF', 'GK'][i % 4] });
-    const io = {
-      async ask(t, d) {
-        if (t === 'scene') return scene === 'smart' ? sceneSmart(d.scene) : Math.floor(SIM.rnd(G) * 3);
-        if (t === 'offers') return OFFER[offer](G, d.offers);
-        return Math.floor(SIM.rnd(G) * d.choices.length);
-      }, async show() {},
-    };
+    const io = makeIO(G, { beat: scene === 'smart' ? 'smart' : 'random', mini: scene === 'smart' ? 'human' : 'random', rollouts: 6, offer: (G, o) => OFFER[offer](G, o) });
     let g = 0;
     while (G.phase !== 'retired' && g++ < 900) {
       if (G.phase === 'week') await SIM.playWeek(G, TRAIN[train](G), io, SIM.mainAttrs(G.p.pos)[G.week % 2]);

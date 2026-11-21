@@ -1,9 +1,5 @@
 // 숫자가 깨지지 않는지(NaN·Infinity·범위), 모든 이벤트가 한 번 이상 나오는지, 세이브를 중간에 다시 불러와도 이어지는지 확인
-const fs = require('fs'), path = require('path'), vm = require('vm');
-const ROOT = path.join(__dirname, '..');
-['data/clubs.js', 'data/names.js', 'data/events.js', 'js/sim/core.js', 'js/sim/match.js', 'js/sim/season.js', 'js/sim/events.js']
-  .forEach((f) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, f), 'utf8')));
-const SIM = globalThis.SIM, D = globalThis.DATA;
+const { SIM, D, makeIO } = require('./load');
 function bad(o, p = '') {
   if (typeof o === 'number') return Number.isFinite(o) ? null : p;
   if (o && typeof o === 'object') for (const k in o) { const r = bad(o[k], p + '.' + k); if (r) return r; }
@@ -14,15 +10,16 @@ function bad(o, p = '') {
   const N = +process.argv[2] || 150;
   for (let i = 0; i < N; i++) {
     let G = SIM.newGame({ seed: 31337 + i * 6151, name: 't', pos: ['FW', 'MF', 'DF', 'GK'][i % 4] });
-    const io = { async ask(t, d) {
-      if (t === 'offers') return Math.floor(SIM.rnd(G) * d.offers.length);
-      return Math.floor(SIM.rnd(G) * (d.choices ? d.choices.length : 3)); }, async show() {} };
+    const io = makeIO(G, { beat: 'random', mini: 'random' });
     let g = 0;
     while (G.phase !== 'retired' && g++ < 900) {
-      if (G.phase === 'week') await SIM.playWeek(G, SIM.pick(G, ['train', 'focus', 'rest', 'video', 'sns']), io, SIM.pick(G, SIM.attrKeys(G.p)));
+      if (G.phase === 'week') {
+        if (SIM.canTalk(G) && SIM.chance(G, 0.3)) { const o = SIM.talkOptions(G); SIM.talk(G, SIM.pick(G, o).key); }
+        await SIM.playWeek(G, SIM.pick(G, Object.keys(SIM.ACTIONS)), io, SIM.pick(G, SIM.attrKeys(G.p)));
+      }
       else await SIM.endSeason(G, io);
       // 저장했다가 다시 불러온 것처럼 이어 간다
-      if (g % 17 === 0) G = JSON.parse(JSON.stringify(G));
+      if (g % 17 === 0) { G = JSON.parse(JSON.stringify(G)); io.rebind && io.rebind(G); }
       const b = bad(G);
       if (b) { problems.push(`${i}: ${b}`); break; }
       const p = G.p;

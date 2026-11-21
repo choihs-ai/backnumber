@@ -14,7 +14,7 @@
 - `js/pixel/` 도트 그림 (선수, 미니 피치, 배지, 아이콘, 트로피)
 - `js/ui/` 화면과 효과음
 - `tools/qa.js` 자동 커리어 테스트: `node tools/qa.js 100 smart`
-- `tools/policy.js` 플레이 방식별 결과 비교, `tools/scenes.js` 장면 선택 검증, `tools/bench.js` 나이별 벤치 비율, `tools/sanity.js` 숫자·이벤트·세이브 점검
+- `tools/policy.js` 플레이 방식별 결과 비교, `tools/chances.js` 경기 장면 검증, `tools/bench.js` 나이별 벤치 비율, `tools/sanity.js` 숫자·이벤트·세이브 점검
 - `assets.html` 도트 에셋 시트
 
 ## 직접 넣는 파일

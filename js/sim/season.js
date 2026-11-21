@@ -75,6 +75,7 @@
       prevNo: p.squadNo,
     });
     p.flags.newClub = false;
+    if (p.flags.guarantee) { S.spot -= 4; p.flags.guarantee = false; }
     assignNumber(G);
     return S;
   };
@@ -170,21 +171,27 @@
   };
 
   // ── 훈련
-  const FATIGUE = { train: 6, focus: 11, rest: -30, video: 2, sns: 2 };
+  const FATIGUE = { train: 6, focus: 11, special: 9, setpiece: 4, recovery: -18, rest: -30, video: 2, mental: -6, sns: 2 };
+  const SPECIAL = { FW: '마무리 특훈', MF: '패스 특훈', DF: '수비 특훈', GK: '반응 특훈' };
   SIM.ACTIONS = {
     train: { name: '기본 훈련', icon: 'train', desc: '포지션에 맞게 고르게 성장' },
     focus: { name: '집중 훈련', icon: 'focus', desc: '능력치 하나를 크게. 피로가 많이 쌓인다' },
+    special: { name: '포지션 특훈', icon: 'focus', desc: '핵심 능력치 둘 + 2주 동안 큰 경기 게이지가 넓어진다' },
+    setpiece: { name: '세트피스 연습', icon: 'ball', desc: '프리킥·페널티킥 실력. 잘 차면 키커를 맡는다' },
+    recovery: { name: '회복 훈련', icon: 'rest', desc: '가볍게 몸을 풀며 피로를 꽤 푼다' },
     rest: { name: '휴식', icon: 'rest', desc: '피로 회복, 부상 회복 두 배' },
     video: { name: '영상 분석', icon: 'video', desc: '멘탈 상승, 다음 큰 경기에서 힌트 추가' },
+    mental: { name: '멘탈 코칭', icon: 'video', desc: '멘탈이 크게 오른다. 큰 경기에 강해진다' },
     sns: { name: 'SNS·미디어', icon: 'sns', desc: '인기 상승. 가끔 논란이 생긴다', pro: true },
   };
+  SIM.actionName = (G, k) => (k === 'special' ? SPECIAL[G.p.pos] : SIM.ACTIONS[k].name);
 
   // 성실도: 꾸준히 훈련하면 잠재력보다 최대 5 높이, 게으르면 최대 5 낮게 끝난다
-  const WORK = { train: 0.06, focus: 0.08, video: 0.02, sns: -0.06, rest: 0 };
+  const WORK = { train: 0.06, focus: 0.08, special: 0.07, setpiece: 0.05, recovery: 0.03, video: 0.02, mental: 0.02, sns: -0.06, rest: 0 };
   function grow(G, action, focusKey, minsRatio, fatigueBefore) {
     const p = G.p;
     let dw = WORK[action];
-    if (action === 'rest' && p.injury === 0 && fatigueBefore < 35) dw = -0.06;
+    if ((action === 'rest' || action === 'recovery') && p.injury === 0 && fatigueBefore < 25) dw = -0.06;
     p.work = clamp((p.work || 0) + dw, -5, 5);
     const ovr = SIM.ovr(p);
     const age = p.age;
@@ -198,7 +205,9 @@
       let m = 0;
       if (action === 'train') m = 0.6 + 2.4 * w[k];
       else if (action === 'focus') m = k === focusKey ? 3.2 : 0.35;
-      else if (action === 'video' || action === 'sns') m = 0.3 * (0.6 + 2.4 * w[k]);
+      else if (action === 'special') m = k === SIM.mainAttrs(p.pos)[0] || k === SIM.mainAttrs(p.pos)[1] ? 1.9 : 0.2;
+      else if (action === 'recovery') m = 0.35 * (0.6 + 2.4 * w[k]);
+      else if (action === 'video' || action === 'sns' || action === 'mental' || action === 'setpiece') m = 0.3 * (0.6 + 2.4 * w[k]);
       // 경기만 뛰어도 조금은 큰다
       m += 0.25 * minsRatio;
       const g = base * m * (0.85 + 0.3 * SIM.rnd(G));
@@ -217,6 +226,50 @@
       SIM.addAttr(p, k, -(fast ? 1.6 + SIM.rnd(G) * 1.6 : 0.4 + SIM.rnd(G)) * hard * care);
     });
   }
+
+  // ── 감독 면담 (4주에 한 번, 훈련과 별개)
+  const nowWeek = (G) => G.year * 12 + G.week;
+  SIM.canTalk = (G) => SIM.isPro(G) && !G.p.military && nowWeek(G) - (G.p.flags.talkAt || -99) >= 4;
+  SIM.talkOptions = function (G) {
+    const p = G.p, S = G.season;
+    const out = [
+      { key: 'time', label: '출전 시간을 더 달라고 한다', sub: SIM.ovr(p) >= S.spot ? '실력은 충분하다' : '아직 경쟁자가 한 수 위다' },
+      { key: 'move', label: '이적을 요청한다', sub: '감독 신뢰가 떨어진다. 다음 이적 시장에 제안이 더 온다' },
+    ];
+    if (!p.flags.taker) out.push({ key: 'taker', label: '세트피스를 맡겠다고 한다', sub: `세트피스 실력 ${Math.floor(p.sp || 45)}` });
+    if (!p.flags.captain && p.age >= 23) out.push({ key: 'captain', label: '주장 완장을 원한다고 말한다', sub: '신뢰가 아주 높아야 한다' });
+    out.push({ key: 'thanks', label: '그냥 감사 인사만 한다', sub: '신뢰가 조금 오른다' });
+    return out;
+  };
+  SIM.talk = function (G, key) {
+    const p = G.p, S = G.season;
+    p.flags.talkAt = nowWeek(G);
+    const ovr = SIM.ovr(p);
+    if (key === 'time') {
+      const ok = chance(G, sig((ovr - S.spot) / 3 + (p.trust - 50) / 20));
+      if (ok) { S.spot -= 2.5; p.trust = clamp(p.trust + 3, 0, 100); return { ok, text: '감독이 고개를 끄덕였다. "다음 경기부터 더 뛰게 해 주지. 보여 줘."' }; }
+      p.trust = clamp(p.trust - 6, 0, 100);
+      return { ok, text: '"자리는 훈련장에서 따는 거다." 분위기가 싸늘해졌다.' };
+    }
+    if (key === 'move') {
+      p.flags.wantMove = true;
+      p.trust = clamp(p.trust - 8, 0, 100);
+      return { ok: true, text: '감독은 말없이 듣다가 구단에 전하겠다고 했다. 다음 이적 시장에서 제안이 더 들어온다.' };
+    }
+    if (key === 'taker') {
+      const ok = (p.sp || 45) >= 60 && p.trust >= 55 ? true : chance(G, 0.2);
+      if (ok) { p.flags.taker = true; return { ok, text: '"좋아. 이제 프리킥이랑 페널티킥은 네가 찬다." 큰 경기에서 세트피스 장면이 더 자주 나온다.' }; }
+      return { ok, text: '"연습할 때 보니까 아직이다." 세트피스 연습을 더 해야겠다.' };
+    }
+    if (key === 'captain') {
+      const ok = p.trust >= 80 || (p.trust >= 70 && chance(G, 0.4));
+      if (ok) { p.flags.captain = true; p.pop = clamp(p.pop + 5, 0, 100); return { ok, text: '감독이 완장을 건넸다. 다음 경기부터 주장이다.' }; }
+      p.trust = clamp(p.trust - 3, 0, 100);
+      return { ok, text: '"아직은 이르다." 감독이 웃으며 넘겼다.' };
+    }
+    p.trust = clamp(p.trust + 2, 0, 100);
+    return { ok: true, text: '감독이 어깨를 두드렸다.' };
+  };
 
   // ── 기록
   function record(G, res) {
@@ -244,7 +297,7 @@
     }
     if (played) {
       S.sceneN += res.sceneN; S.sceneOk += res.sceneOk;
-      if (fx.important) p.mental = clamp(p.mental + 0.4, 0, 99);
+      if (fx.important) p.mental = clamp(p.mental + (p.flags.captain ? 0.7 : 0.4), 0, 99);
       p.fatigue = clamp(p.fatigue + (res.role === 'start' ? 3 : 1), 0, 100);
       if (SIM.isPro(G) && !fx.intl) p.debut = true;
       const risk = 0.005 + Math.max(0, p.fatigue - 55) * 0.0012;
@@ -288,11 +341,14 @@
   // ── 한 주
   SIM.playWeek = async function (G, action, io, focusKey) {
     const p = G.p, S = G.season;
-    if (p.injury > 0 && (action === 'train' || action === 'focus')) action = 'rest';
+    if (p.injury > 0 && ['train', 'focus', 'special', 'setpiece'].includes(action)) action = 'rest';
     if (action === 'sns' && !SIM.isPro(G)) action = 'train';
     const fatigueBefore = p.fatigue;
     p.fatigue = clamp(p.fatigue + FATIGUE[action], 0, 100);
     if (action === 'video') { p.mental = clamp(p.mental + 1.5, 0, 99); p.flags.videoBonus = 2; }
+    if (action === 'mental') p.mental = clamp(p.mental + 2.6, 0, 99);
+    if (action === 'special') p.flags.sharp = 2;
+    if (action === 'setpiece') p.sp = clamp((p.sp || 45) + 1.6 * (p.age <= 27 ? 1 : 0.6) * (0.8 + 0.4 * SIM.rnd(G)), 1, 99);
     if (action === 'sns') { p.pop += 3; if (chance(G, 0.1)) p.flags.pendingControversy = true; }
 
     // 대표팀 소집 (A매치 주간)
@@ -329,8 +385,9 @@
     await io.show('week', { week: G.week, results, action, gains });
 
     p.fatigue = clamp(p.fatigue - 12, 0, 100);
-    p.trust += (50 - p.trust) * 0.03;
-    if (p.injury > 0) p.injury = Math.max(0, p.injury - (action === 'rest' ? 2 : 1));
+    p.trust += ((p.flags.captain ? 62 : 50) - p.trust) * 0.03;
+    if (p.injury > 0) p.injury = Math.max(0, p.injury - (action === 'rest' ? 2 : action === 'recovery' ? (chance(G, 0.5) ? 2 : 1) : 1));
+    if (p.flags.sharp > 0) p.flags.sharp--;
     p.pop = clamp(p.pop * 0.985, 0, 100);
 
     if (p.military) {
@@ -351,6 +408,7 @@
   function aCallScore(G) {
     const p = G.p;
     const avg = SIM.avg(G.season.ratings) || 6.6;
+    if (p.flags.intlRetired) return 0;
     return SIM.ovr(p) + (avg - 6.8) * 4 + p.pop * 0.03 + (p.intl.caps > 5 ? 1.5 : 0) - Math.max(0, p.age - 31) * 1.5;
   }
 
@@ -405,12 +463,12 @@
     const avg = SIM.avg(G.season.ratings) || 0;
     const minsRatio = G.season.mins / Math.max(1, G.week * 90 * SIM.league(p.club).perWeek);
     if (when === 'winter' && (G.season.firstMatch !== false && p.flags.joinedYear === G.year)) return [];
-    if (when === 'winter' && !(avg >= 7.6 || (minsRatio < 0.15 && SIM.ovr(p) >= cur.str - 3) || p.flags.wantLoan)) return [];
+    if (when === 'winter' && !(avg >= 7.6 || (minsRatio < 0.15 && SIM.ovr(p) >= cur.str - 3) || p.flags.wantLoan || p.flags.wantMove)) return [];
     const pool = Object.values(D.CLUBS).filter((c) => !c.fake && c.id !== cur.id && c.id !== D.MILITARY_CLUB && c.id !== (p.loan && p.loan.from)
       && value >= c.str - 2.5 && value <= c.str + 14);
     const scored = pool.map((c) => ({ c, s: c.rep + gauss(G) * 10 + (value - c.str) * 1.5 })).sort((a, b) => b.s - a.s);
     const hot = avg >= 7.1 || value >= cur.str + 3;
-    const n = when === 'winter' ? ri(G, 1, 2) : hot ? ri(G, 2, 4) : ri(G, 0, 2);
+    const n = (when === 'winter' ? ri(G, 1, 2) : hot ? ri(G, 2, 4) : ri(G, 0, 2)) + (p.flags.wantMove ? 1 : 0);
     const out = [], leagues = {};
     for (const { c } of scored) {
       if (out.length >= n) break;
@@ -418,6 +476,11 @@
       if (c.league === 'sa' && !(p.flags.saudi || p.age >= 29)) continue;
       leagues[c.league] = (leagues[c.league] || 0) + 1;
       out.push(makeOffer(G, c, 'transfer'));
+    }
+    if (p.flags.homeReturn && when === 'summer') {
+      const first = p.career.map((c) => SIM.club(c.club)).find((c) => !c.fake && D.LEAGUES[c.league].country === 'KR' && c.id !== D.MILITARY_CLUB);
+      if (first && first.id !== cur.id) out.push(Object.assign(makeOffer(G, first, 'transfer'), { role: '핵심', number: SIM.ICONIC[p.pos][0], years: 2, homecoming: true }));
+      p.flags.homeReturn = false;
     }
     if (p.flags.saudi && !out.some((o) => SIM.club(o.club).league === 'sa')) {
       const sa = D.clubsIn('sa');
@@ -430,6 +493,7 @@
       if (lp.length) out.push(makeOffer(G, pick(G, lp), 'loan'));
     }
     p.flags.wantLoan = false;
+    if (when === 'summer') p.flags.wantMove = false;
     return out;
   };
 
@@ -458,8 +522,43 @@
       const k3 = pick(G, ['k3_harbor', 'k3_valley']);
       choices.push(makeOffer(G, SIM.club(k3), 'transfer'));
     }
-    const idx = await io.ask('offers', { when, offers: choices, current: cur.id, contract: p.contract });
-    await applyOffer(G, io, choices[idx], when);
+    for (;;) {
+      const idx = await io.ask('offers', { when, offers: choices, current: cur.id, contract: p.contract });
+      const o = choices[idx];
+      if (o && (o.kind === 'transfer' || o.kind === 'loan')) {
+        const r = await negotiate(G, io, o);
+        if (r === 'withdrawn') { choices.splice(idx, 1); if (!choices.length) choices.push({ kind: 'retire' }); continue; }
+      }
+      await applyOffer(G, io, o, when);
+      return;
+    }
+  }
+
+  // 이적 협상: 요구를 걸면 조건이 좋아지지만 구단이 제안을 거둘 수도 있다
+  async function negotiate(G, io, o) {
+    const p = G.p, c = SIM.club(o.club);
+    const power = playerValue(G) - c.str;
+    const iconic = SIM.ICONIC[p.pos];
+    const demands = [{ key: 'sign', label: '그대로 사인한다', sub: '조건 그대로' }];
+    if (!iconic.includes(o.number)) demands.push({ key: 'number', label: `등번호 ${iconic[0]}번을 요구한다`, sub: power >= 2 ? '들어줄 것 같다' : '쉽지 않아 보인다' });
+    if (o.role !== '핵심' && o.kind !== 'loan') demands.push({ key: 'start', label: '주전 보장을 요구한다', sub: power >= 0 ? '해 볼 만하다' : '무리한 요구일 수 있다' });
+    if (o.kind !== 'loan') demands.push({ key: 'long', label: '계약을 5년으로 늘린다', sub: '오래 머문다' }, { key: 'short', label: '1년만 하겠다', sub: '다음 여름에 다시 시장에 나온다' });
+    if (demands.length === 1) return 'ok';
+    const i = await io.ask('negotiate', { offer: o, choices: demands.map((d) => d.label), demands });
+    const d = demands[i] || demands[0];
+    let text = null, res = 'ok';
+    if (d.key === 'number') {
+      if (chance(G, sig(power / 3 + 0.5))) { o.number = iconic[0]; text = `구단이 받아들였다. 등번호 ${iconic[0]}번.`; }
+      else if (chance(G, 0.25)) { res = 'withdrawn'; text = `${c.name}이(가) 제안을 거둬들였다.`; }
+      else text = '등번호는 안 된다고 했다. 원래 조건으로 사인했다.';
+    } else if (d.key === 'start') {
+      if (chance(G, sig(power / 3 - 0.3))) { o.guarantee = true; o.role = '주전 경쟁'; text = '감독이 직접 전화를 걸어 왔다. "첫 시즌부터 기회를 주겠다."'; }
+      else if (chance(G, 0.35)) { res = 'withdrawn'; text = `${c.name}이(가) "보장은 없다"며 제안을 거둬들였다.`; }
+      else text = '보장은 못 한다고 했다. 원래 조건으로 사인했다.';
+    } else if (d.key === 'long') { o.years = 5; text = '5년 계약에 사인했다.'; }
+    else if (d.key === 'short') { o.years = 1; text = '1년 계약. 내년 여름에 다시 고른다.'; }
+    if (text) await io.show('message', { title: '협상', text });
+    return res;
   }
 
   async function applyOffer(G, io, o, when) {
@@ -471,6 +570,8 @@
     else { p.contract = o.years; if (p.loan) p.loan = null; }
     p.squadNo = o.number;
     p.trust = { 핵심: 62, '주전 경쟁': 50, 로테이션: 42 }[o.role] || 48;
+    p.flags.captain = false; p.flags.taker = false;
+    if (o.guarantee) p.flags.guarantee = true;
     p.flags.joinedYear = when === 'winter' ? G.year : G.year + 1;
     if (when === 'winter') changeClubMidSeason(G, o.club);
     else { p.club = o.club; p.flags.newClub = true; }
@@ -499,6 +600,7 @@
     if (o.kind === 'univ') { p.univYears = 0; }
     p.club = o.club; p.contract = o.years; p.squadNo = o.number; p.flags.newClub = true;
     p.trust = o.kind === 'univ' ? 52 : 46;
+    p.flags.captain = false;
   }
 
   // ── 시상
@@ -698,7 +800,7 @@
       name: p.name, pos: p.pos, look: p.look, from: 2027, to: G.year, age: p.age, why,
       apps: sum('apps'), goals: sum('goals'), assists: sum('assists'), caps: p.intl.caps, intlGoals: p.intl.goals,
       clubs, trophies: p.trophies.length, trophyList: p.trophies.slice(-12), awards: p.awards.length, ballonBest: best,
-      ballonWins: p.ballon.filter((b) => b.rank === 1).length, exempt: p.exempt, peak: Math.max(...p.career.map((c) => c.ovr)),
+      ballonWins: p.ballon.filter((b) => b.rank === 1).length, exempt: p.exempt, license: !!p.flags.license, captain: !!p.flags.captain, peak: Math.max(...p.career.map((c) => c.ovr)),
     };
     await io.show('retire', G.hall);
   }

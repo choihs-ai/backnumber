@@ -189,3 +189,24 @@ tr.hl td { background: #F3D9CF; }
 
 textarea { width: 100%; height: 120px; font: 11px/1.4 'GM', monospace; border: 2px solid var(--ink); background: var(--paper2); padding: 8px; border-radius: 0; }
 .foot { font-size: 10px; color: var(--ink3); text-align: center; margin-top: 18px; line-height: 1.5; }
+
+/* 경기 장면 v2 */
+.lead { margin: 10px 0 0; font-size: 13px; color: var(--grass); font-weight: 600; }
+.opts4 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.opts4 .btn { margin: 0; padding: 10px 8px; text-align: left; }
+.opts4 .btn .t { font-size: 14px; }
+.opts4 .btn .d { font-size: 11px; }
+.opts4.odd .btn:last-child { grid-column: 1 / -1; }
+.goalview { position: relative; border: 2px solid var(--ink); }
+.goalview canvas { width: 100%; height: auto; display: block; }
+.zones { position: absolute; left: calc(14 / 96 * 100%); top: calc(10 / 56 * 100%); width: calc(68 / 96 * 100%); height: calc(36 / 56 * 100%); display: grid; grid-template-columns: repeat(3, 1fr); grid-template-rows: repeat(3, 1fr); }
+.zone { background: transparent; border: 1px dashed rgba(242, 235, 221, 0.35); cursor: pointer; padding: 0; }
+.zone.on { background: rgba(200, 53, 43, 0.35); border: 2px solid #F2EBDD; }
+.gauge { position: relative; height: 34px; border: 2px solid var(--ink); background: #E6DECD; margin: 12px 0 8px; overflow: hidden; touch-action: manipulation; }
+.gauge .sweet { position: absolute; top: 0; bottom: 0; background: var(--grass); }
+.gauge .needle { position: absolute; top: -2px; bottom: -2px; width: 4px; margin-left: -2px; background: var(--red); box-shadow: 0 0 0 1px var(--ink); }
+.gauge.hit { border-color: var(--grass); }
+.gauge.miss .needle { background: var(--ink); }
+.btn.big { padding: 15px; font-family: 'G11'; font-weight: 700; font-size: 18px; }
+.cap { display: inline-block; background: var(--red); color: var(--paper); font-family: 'G11'; font-size: 12px; padding: 0 5px; vertical-align: 3px; }
+.talk { margin-top: 10px; }

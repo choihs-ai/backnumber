@@ -1,52 +1,23 @@
 // 화면 없이 커리어를 끝까지 돌린다.
 // 사용법: node tools/qa.js [커리어 수] [봇: random|smart] [포지션]
-const fs = require('fs');
-const path = require('path');
-const vm = require('vm');
-
-const ROOT = path.join(__dirname, '..');
-const FILES = ['data/clubs.js', 'data/names.js', 'data/events.js', 'js/sim/core.js', 'js/sim/match.js', 'js/sim/season.js', 'js/sim/events.js'];
-FILES.forEach((f) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), { filename: f }));
-const SIM = globalThis.SIM;
+const { SIM, D, makeIO } = require('./load');
 
 function bot(kind, G) {
-  const r = () => SIM.rnd(G);
   const smart = kind === 'smart';
-  return {
-    async ask(type, d) {
-      if (type === 'scene') {
-        if (!smart) return Math.floor(r() * 3);
-        const s = d.scene;
-        if (s.kind === 'attack') {
-          if (s.freeMate && (s.press === 2 || s.dist === 'far' || (s.dist === 'near' && s.side !== 'center'))) return 0;
-          if (s.dist === 'far' && !s.gkOut) return s.press === 0 ? 1 : 0;
-          if (s.press === 0 || s.tip === 'slowDef') return s.dist === 'near' ? 2 : 1;
-          return 2;
-        }
-        if (s.kind === 'defend') return s.inBox ? 1 : s.type === 'cross' ? 2 : s.tip === 'oneFoot' ? 0 : 1;
-        if (s.type === '1v1') return { long: 0, calm: 1, fast: 2 }[s.variant];
-        if (s.type === 'pk') return s.centerLover && G.p.flags.videoBonus >= 0 ? 1 : s.foot === 'R' ? 2 : 0;
-        return s.variant === 'crowded' ? 0 : 1;
-      }
-      if (type === 'event') return Math.floor(r() * d.choices.length);
-      if (type === 'offers') {
-        const o = d.offers;
-        if (!smart) return Math.floor(r() * o.length);
-        // 성실 봇: 핵심·주전 경쟁 중 명성 높은 곳, 은퇴는 34세 이후 실력이 떨어지면
-        let best = -1, bs = -1e9;
-        o.forEach((x, i) => {
-          if (x.kind === 'retire') { if (G.p.age >= 35) { best = i; bs = 1e9; } return; }
-          const c = SIM.club(x.club);
-          const roleS = { 핵심: 12, '주전 경쟁': 6, 로테이션: -10 }[x.role] || 0;
-          const s = (x.kind === 'stay' ? 4 : 0) + c.rep * 0.4 + roleS + (x.kind === 'univ' && SIM.ovr(G.p) < 56 ? 10 : 0);
-          if (s > bs) { bs = s; best = i; }
-        });
-        return Math.max(0, best);
-      }
-      return 0;
+  return makeIO(G, {
+    beat: smart ? 'smart' : 'random', mini: smart ? 'human' : 'random', rollouts: 6,
+    offer: (G, o) => {
+      if (!smart) return Math.floor(SIM.rnd(G) * o.length);
+      let best = -1, bs = -1e9;
+      o.forEach((x, i) => {
+        if (x.kind === 'retire') { if (G.p.age >= 35) { best = i; bs = 1e9; } return; }
+        const c = SIM.club(x.club);
+        const s = (x.kind === 'stay' ? 4 : 0) + c.rep * 0.4 + ({ 핵심: 12, '주전 경쟁': 6, 로테이션: -10 }[x.role] || 0) + (x.kind === 'univ' && SIM.ovr(G.p) < 56 ? 10 : 0);
+        if (s > bs) { bs = s; best = i; }
+      });
+      return Math.max(0, best);
     },
-    async show() {},
-  };
+  });
 }
 
 function chooseAction(G, kind) {
