@@ -1,10 +1,10 @@
 // 오프라인 캐시. 파일을 바꾸면 VERSION을 올린다.
-const VERSION = 'backnumber-v4';
+const VERSION = 'backnumber-v5';
 const FILES = [
   './', 'index.html', 'manifest.webmanifest', 'css/style.css',
   'data/clubs.js', 'data/names.js', 'data/events.js', 'data/events2.js',
   'js/pixel/core.js', 'js/pixel/player.js', 'js/pixel/pitch.js', 'js/pixel/badge.js', 'js/pixel/icons.js', 'js/pixel/trophies.js', 'js/pixel/goal.js',
-  'js/sim/core.js', 'js/sim/match.js', 'js/sim/chains.js', 'js/sim/season.js', 'js/sim/events.js',
+  'js/sim/core.js', 'js/sim/match.js', 'js/sim/chains.js', 'js/sim/season.js', 'js/sim/events.js', 'js/sim/legacy.js',
   'js/ui/sound.js', 'js/ui/app.js',
   'fonts/galmuri/Galmuri11.woff2', 'fonts/galmuri/Galmuri11-Bold.woff2', 'fonts/galmuri/Galmuri9.woff2', 'fonts/galmuri/GalmuriMono11.woff2',
   'icons/icon-180.png', 'icons/icon-192.png', 'icons/icon-512.png',

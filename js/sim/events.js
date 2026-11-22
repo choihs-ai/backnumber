@@ -36,7 +36,7 @@
   SIM.maybeEvent = async function (G, io) {
     const p = G.p;
     const forced = p.flags.pendingControversy;
-    if (!forced && !chance(G, SIM.club(p.club).league === 'school' ? 0.3 : 0.25)) return;
+    if (!forced && !chance(G, SIM.club(p.club).league === 'school' ? 0.12 : 0.1)) return;
     const X = helpers(G);
     const pool = D.EVENTS.filter((e) => (e.repeat || !p.seenEvents[e.id]) && (!p.lastEvent || p.lastEvent !== e.id) && e.when(G, X));
     if (!pool.length) return;

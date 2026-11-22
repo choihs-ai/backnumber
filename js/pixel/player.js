@@ -233,5 +233,29 @@
     return PX.toCanvas(PX.playerGrid(spec), PX.playerColors(spec), scale, !!spec.flip);
   };
 
+  // 뒷모습: 얼굴 대신 뒤통수, 등에는 등번호
+  PX.playerBackGrid = function (spec, number) {
+    const g = PX.playerGrid(Object.assign({}, spec, { pose: 'stand', frame: 0 }));
+    for (let y = 1; y <= 9; y++)
+      for (let x = 6; x <= 17; x++) {
+        const k = g[y + OY][x];
+        if ('SsemL'.includes(k)) g[y + OY][x] = y >= 9 ? 's' : y >= 7 ? 'h' : 'H';
+      }
+    for (let x = 8; x <= 15; x++) { if (g[11 + OY][x] !== 'o') g[11 + OY][x] = 'C'; }
+    for (let y = 12; y <= 13; y++) for (let x = 7; x <= 16; x++) if ('Cs'.includes(g[y + OY][x])) g[y + OY][x] = 'J';
+    const digits = String(number || '').slice(0, 2).split('');
+    const x0 = digits.length === 2 ? 8 : 10;
+    digits.forEach((d, i) => (PX.FONT3x5 ? PX.FONT3x5[d] : []).forEach((row, ry) => row.split('').forEach((c, rx) => {
+      if (c === '#') g[12 + ry + OY - 0][x0 + i * 4 + rx] = 'N';
+    })));
+    return g;
+  };
+  PX.playerBackCanvas = function (spec, number, scale = 2) {
+    const base = PX.playerColors(spec);
+    const kit = spec.kit;
+    const numCol = PX.luma(kit.primary) > 150 ? '#1E1E1E' : (kit.secondary === kit.primary ? '#F2EBDD' : (PX.luma(kit.secondary) > 150 ? kit.secondary : '#F2EBDD'));
+    return PX.toCanvas(PX.playerBackGrid(spec, number), (k, x, y) => (k === 'N' ? numCol : base(k, x, y)), scale);
+  };
+
   PX.PLAYER_SIZE = { w: W, h: H };
 })();

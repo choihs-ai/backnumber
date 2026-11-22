@@ -24,11 +24,22 @@
     const onPitch = role === 'start' || role === 'sub';
     let my = fx.myStr;
     if (role === 'start') my += (ovr - my) * 0.15;
+    if (role === 'start' && SIM.has && SIM.has(G, 'leader')) my += 1;
     const homeMul = fx.home ? 1.1 : 0.92;
-    const scenes = fx.important && onPitch;
+    // 한 시즌에 장면이 너무 많으면 지친다: 결승·데뷔전·대표팀 대회는 늘, 나머지는 시즌 예산 안에서만
+    const S = G.season;
+    const must = fx.final || fx.tag === '데뷔전' || fx.comp === 'tour';
+    if (S && S.sceneBudget === undefined) S.sceneBudget = 2;
+    // 장면 예산은 '기회' 개수 기준. 결승·데뷔전·대표팀 대회는 예산과 별개
+    let nScenes = 0;
+    if (fx.important && onPitch) {
+      const want = role === 'start' && fx.comp !== 'tour' && fx.tag !== '데뷔전' ? 2 : 1;
+      nScenes = must ? want : Math.min(want, S ? S.sceneBudget : 0);
+      if (!must && S) S.sceneBudget -= nScenes;
+    }
+    const scenes = nScenes > 0;
     // 장면에서 나오는 골·실점만큼 자동 득점 기대값을 미리 덜어 둔다 (포지션마다 장면 종류가 달라서 따로)
     // 기준: 장면 평균 2.4번일 때 장면 득실을 뺀 값 (tools/chances.js로 잰 평균 수준 플레이 기준)
-    const nScenes = scenes ? (role === 'start' ? 2 + (chance(G, 0.4) ? 1 : 0) : 1) : 0;
     const full = { FW: [0.45, 0.95], MF: [0.65, 0.85], DF: [0.9, 0.65], GK: [1, 0.3] }[p.pos];
     const cut = full.map((x) => 1 - (1 - x) * (nScenes / 2.4));
     const lm = 1.3 * Math.exp((my - fx.oppStr) / 15) * homeMul * cut[0];

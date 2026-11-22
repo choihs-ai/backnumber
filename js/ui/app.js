@@ -225,10 +225,17 @@
         const { action, focus } = await hub();
         if (action === 'quit') { save(); return title(); }
         if (action === 'retired') break;
-        G._before = { ovr: SIM.ovr(G.p), attrs: Object.assign({}, G.p.attrs) };
-        await SIM.playWeek(G, action, io, focus);
-        delete G._before;
-        save();
+        // 한 턴 = 6주. 정한 훈련으로 몰아서 진행하고 큰 경기·소식·이적만 멈춘다
+        const end = G.week <= 6 ? 6 : 12;
+        turn = { from: G.week, to: end, year: G.year, results: [], ovr: SIM.ovr(G.p), attrs: Object.assign({}, G.p.attrs), action, club: G.p.club, injuredAt: null };
+        while (G && G.phase === 'week' && G.week <= end && G.year === turn.year) {
+          const heavy = ['train', 'focus', 'special', 'setpiece'].includes(action);
+          const a = heavy && G.p.fatigue >= 68 ? 'recovery' : action;
+          await SIM.playWeek(G, a, io, focus);
+          save();
+        }
+        if (G) await turnScreen(turn);
+        turn = null;
       } else {
         await SIM.endSeason(G, io);
         if (G.phase !== 'retired') save();
@@ -242,6 +249,69 @@
       G = null;
     }
     return title();
+  }
+
+  // ── 턴 요약 (6주)
+  let turn = null;
+  function headline(t, p) {
+    const rs = t.results.filter((r) => !r.fx.intl);
+    const name = p.name;
+    const club = clubName(t.club);
+    const g = rs.reduce((a, r) => a + r.goals, 0), as = rs.reduce((a, r) => a + r.assists, 0);
+    const w = rs.filter((r) => r.gm > r.go || r.pens === 'W').length, l = rs.filter((r) => r.gm < r.go || r.pens === 'L').length;
+    const best = rs.filter((r) => r.rating).sort((a, b) => b.rating - a.rating)[0];
+    const hat = rs.find((r) => r.goals >= 3);
+    const brace = rs.find((r) => r.goals === 2);
+    const cs = rs.filter((r) => r.mins >= 60 && r.go === 0).length;
+    const played = rs.filter((r) => r.mins > 0).length;
+    if (t.injuredAt) return [`${name}, 부상으로 쓰러져`, `${t.injuredAt}주 결장. ${club}에 비상이 걸렸다.`];
+    if (hat) return [`${name}, ${hat.fx.opp}전 해트트릭!`, `${club} ${hat.gm}-${hat.go} 승리. 경기장이 ${name}의 이름으로 가득 찼다.`];
+    if (g >= 5) return [`${name}, 6주 동안 ${g}골 폭발`, `득점 레이스 선두권. 상대 수비수들의 악몽이 됐다.`];
+    if (brace) return [`${name} 멀티골, ${club} 웃었다`, `${brace.fx.opp}전 ${brace.gm}-${brace.go}. 평점 ${brace.rating.toFixed(1)}.`];
+    if ((p.pos === 'GK' || p.pos === 'DF') && cs >= 4) return [`${club} 무실점 행진, 그 중심에 ${name}`, `6주 동안 무실점 ${cs}경기.`];
+    if (as >= 4) return [`${name}의 발끝에서 시작된다`, `6주 동안 도움 ${as}개.`];
+    if (w >= Math.max(4, rs.length * 0.7)) return [`${club} 거침없는 질주`, `${rs.length}경기 ${w}승. ${name}도 힘을 보탰다.`];
+    if (played <= rs.length * 0.25 && rs.length >= 4) return [`${name}, 벤치에서 기회를 기다린다`, `${rs.length}경기 중 ${played}경기 출전. 다음 턴이 중요하다.`];
+    if (l >= Math.max(3, rs.length * 0.5)) return [`${club} 흔들린다`, `${rs.length}경기 ${l}패. 반등이 필요하다.`];
+    if (best && best.rating >= 7.8) return [`${name}, ${best.fx.opp}전 최고 평점`, `평점 ${best.rating.toFixed(1)}. 감독이 엄지를 들었다.`];
+    return [`${club} ${w}승 ${rs.length - w - l}무 ${l}패`, played ? `${name} ${played}경기 ${g}골 ${as}도움.` : `${name}은(는) 이번 턴 경기에 나서지 못했다.`];
+  }
+
+  async function turnScreen(t) {
+    const p = G.p;
+    const rs = t.results;
+    const club = rs.filter((r) => !r.fx.intl);
+    const played = club.filter((r) => r.mins > 0);
+    const g = played.reduce((a, r) => a + r.goals, 0), as = played.reduce((a, r) => a + r.assists, 0);
+    const avg = SIM.avg(played.map((r) => r.rating));
+    const mom = played.filter((r) => r.rating >= 8).length;
+    const w = club.filter((r) => r.gm > r.go || r.pens === 'W').length, l = club.filter((r) => r.gm < r.go || r.pens === 'L').length;
+    const [h1, h2] = headline(t, p);
+    const o2 = SIM.ovr(p);
+    const up = SIM.attrKeys(p).map((k) => [k, p.attrs[k] - (t.attrs[k] || p.attrs[k])]).filter(([, v]) => v >= 0.1).sort((a, b) => b[1] - a[1]).slice(0, 3);
+    const notable = rs.filter((r) => r.fx.important || r.goals || r.assists || r.rating >= 8 || r.fx.intl || r.injured);
+    const row = (r) => {
+      const res = r.gm > r.go || r.pens === 'W' ? 'W' : r.gm < r.go || r.pens === 'L' ? 'L' : 'D';
+      const me = r.mins ? `${r.goals ? `<b>${r.goals}골</b> ` : ''}${r.assists ? `<b>${r.assists}도움</b> ` : ''}${ratingTag(r.rating)}${r.rating >= 8 ? ' <span class="mom">MOM</span>' : ''}` : `<span class="muted">${roleKo[r.role]}</span>`;
+      return `<div class="mrow"><span class="res ${res}">${{ W: '승', D: '무', L: '패' }[res]}</span><span class="mo">${r.fx.intl ? '대표팀 · ' : ''}${esc(r.fx.opp)} ${r.gm}:${r.go}${r.fx.tag ? ` <span class="red small">${esc(r.fx.tag)}</span>` : ''}</span><span class="mm">${me}</span></div>`;
+    };
+    const date = `${t.year}년 ${t.from === 1 ? '봄' : '가을'}`;
+    render(`${top(`${t.year} 시즌 · ${t.from}~${Math.min(t.to, 12)}주`, SIM.actionName(G, t.action))}
+      <div class="news"><div class="mast"><b>등번호 일보</b><span>${date}</span></div>
+        <h2 class="hl">${esc(h1)}</h2><p class="sub">${esc(h2)}</p></div>
+      <div class="kpis">
+        <div><span>경기</span><b>${played.length}<small>/${club.length}</small></b></div>
+        <div><span>골</span><b>${g}</b></div><div><span>도움</span><b>${as}</b></div>
+        <div><span>평점</span><b>${avg ? avg.toFixed(2) : '-'}</b></div>
+        <div><span>MOM</span><b>${mom}</b></div>
+      </div>
+      <div class="ovrline">OVR <b id="ovrA">${t.ovr}</b>${o2 !== t.ovr ? ` → <b class="red" id="ovrB">${o2}</b>` : ''}<span class="small"> ${up.map(([k, v]) => `${SIM.ATTR_NAMES[k]} +${v.toFixed(1)}`).join(' · ')}</span></div>
+      <h3>주요 경기 <span class="small">팀 ${w}승 ${club.length - w - l}무 ${l}패</span></h3>
+      ${notable.slice(-8).map(row).join('') || '<p class="muted" style="font-size:13px">눈에 띄는 경기는 없었다.</p>'}
+      ${next()}`);
+    if (o2 > t.ovr) { Sound.play('goal'); const b = $app.querySelector('#ovrB'); b.classList.add('pop'); }
+    else Sound.play('page');
+    await choose();
   }
 
   // ── 허브
@@ -264,9 +334,11 @@
       let body = '';
       if (hubTab === 'week') {
         body = `
+          <div class="turnhint">이번 턴: ${G.week}~${G.week <= 6 ? 6 : 12}주를 한 번에 진행한다. 큰 경기와 소식이 있을 때만 멈춘다.</div>
           <div class="plan">${plan.map((x) => `<div class="ln"><span>${x.label}</span>${x.comp === 'cup' && /4강|결승/.test(x.label) ? '<span class="tag">큰 경기</span>' : ''}</div>`).join('')}</div>
           <div class="acts">${acts.map(([k, a], i) => `<button class="act ${acts.length % 2 && i === acts.length - 1 ? 'wide' : ''}" data-v="${k}" ${injured && ['train', 'focus', 'special', 'setpiece'].includes(k) ? 'disabled' : ''}>
             <span data-px="icon" data-name="${a.icon}" data-scale="2"></span><span><span class="t">${SIM.actionName(G, k)}</span><span class="d">${a.desc}</span></span></button>`).join('')}</div>
+          ${SIM.isPro(G) ? `<div class="mss">${SIM.nextMilestones(G).slice(0, 3).map((m) => `<div class="msr"><span>${m.label}</span><span class="bar"><i style="width:${Math.round(m.ratio * 100)}%"></i></span><span class="small">${m.v}/${m.n}</span></div>`).join('')}</div>` : ''}
           ${SIM.canTalk(G) ? '<button class="btn slim talk" data-v="talk"><span class="t">감독 면담</span><span class="d">훈련과 별개. 4주에 한 번</span></button>' : ''}`;
       } else if (hubTab === 'attrs') body = attrsPanel();
       else if (hubTab === 'season') body = seasonPanel();
@@ -352,6 +424,8 @@
       <div class="attr"><span class="lab">멘탈</span><span class="bar"><i style="width:${p.mental}%"></i></span><span class="n">${Math.floor(p.mental)}</span></div>
       <div class="attr"><span class="lab">세트피스</span><span class="bar"><i style="width:${p.sp || 45}%"></i></span><span class="n">${Math.floor(p.sp || 45)}</span></div>
       <p class="small" style="margin-top:6px">${[p.flags.captain && '주장', p.flags.taker && '세트피스 전담 키커'].filter(Boolean).join(' · ') || '맡은 역할 없음'}</p>
+      <h3>특성 ${Object.keys(p.traits || {}).length}/${SIM.TRAITS.length}</h3>
+      <div class="traits">${SIM.TRAITS.map((t) => (p.traits && p.traits[t.id]) ? `<div class="tr on"><b>${t.name}</b><span>${t.desc}</span></div>` : `<div class="tr"><b>???</b><span>아직 열리지 않았다</span></div>`).join('')}</div>
       <p class="muted" style="font-size:13px;margin:8px 0 0">${SIM.potentialComment(p)}</p>
       <p class="muted" style="font-size:13px;margin:4px 0 0">${SIM.workComment(p)}</p>
       <p class="small" style="margin-top:6px">A매치 ${p.intl.caps}경기 ${p.intl.goals}골 · 연령별 대표 ${p.intl.youthCaps}경기${p.exempt ? ' · 병역 면제' : p.militaryDone ? ' · 병역 마침' : ''}</p>`;
@@ -519,40 +593,216 @@
     return { skin: 1, hairStyle: 0, hairColor: 0, gk: true, kit: { primary: prim, secondary: '#1E1E1E', pattern: 'solid', shorts: '#1E1E1E', socks: prim } };
   }
 
-  async function aimScreen(d, mode) {
-    // mode: 'shot'(내가 찬다) | 'dive'(내가 막는다)
-    const sp = d.spec;
-    cur = Object.assign(cur || {}, { score: d.score });
-    const keeper = mode === 'shot' ? oppKeeperSpec(d.fx) : spec('stand');
-    const keeperKey = mode === 'shot' ? 'opp' + (d.fx.oppId || 'n') : 'me' + G.p.look.skin + G.p.look.hairStyle + G.p.look.hairColor + G.p.club;
-    const ask = mode === 'shot' ? (sp.type === 'pk' ? '어디로 찰까? 골문을 눌러 조준' : sp.type === 'header' ? '머리로 어디를 노릴까?' : '어디로 찰까? 골문을 눌러 조준')
-      : '어느 쪽으로 몸을 날릴까?';
+  // 반복 애니메이션. 돌려받은 함수를 부르면 멈춘다
+  function loop(fn) {
+    let on = true;
+    const t0 = performance.now();
+    const f = (now) => { if (!on) return; fn(now - t0); requestAnimationFrame(f); };
+    requestAnimationFrame(f);
+    return () => { on = false; };
+  }
+  const crowdOf = (fx) => {
+    const c = fx.oppId && D.CLUBS[fx.oppId];
+    const mine = fx.intl ? ['#C8352B', '#F2EBDD'] : D.CLUBS[G.season.club].colors;
+    return { colors: c ? [c.colors[0], c.colors[1], mine[0], mine[1]] : ['#C8352B', '#1F4E9C', '#F2EBDD', '#E0C341'] };
+  };
+  const GW = 96, GX0 = 14, GX1 = 81;
+  const quality = (t, w) => (t >= 1 - w ? (t >= 1 - w / 3 ? '완벽!' : '좋아!') : t >= 0.5 ? '조금 빗맞았다' : '완전히 빗맞았다');
+
+  async function shotScreen(d) {
+    const sp = d.spec, type = sp.type;
+    const mech = type === 'header' ? 'ring' : type === 'chip' ? 'rush' : type === 'placed' || type === 'free' ? 'curve' : 'charge';
+    const keeper = oppKeeperSpec(d.fx), keeperKey = 'opp' + (d.fx.oppId || 'n');
+    const shooter = PX.playerBackCanvas(spec('stand'), G.p.squadNo, 1);
+    const crowd = crowdOf(d.fx);
+    const allowed = type === 'chip' ? [0, 1, 2] : [0, 1, 2, 3, 4, 5, 6, 7, 8];
+    const title = { charge: type === 'pk' ? '페널티킥' : type === 'volley' ? '발리슛' : '강슛', curve: type === 'free' ? '프리킥 감아차기' : '감아차기', ring: '헤더', rush: '칩슛' }[mech];
     render(`${chanceHead(Object.assign({}, cur, d))}
       ${d.lead ? `<p class="lead">${esc(d.lead)}</p>` : ''}
       <div class="goalview"><canvas id="goal"></canvas>
-        <div class="zones">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map((z) => `<button class="zone" data-z="${z}" aria-label="${SIM.ZONE_KO[z]}"></button>`).join('')}</div></div>
-      <p class="situ" id="msg">${ask}</p>
-      ${mode === 'dive' && d.hints ? `<ul class="hints">${d.hints.map((h) => `<li class="${h.startsWith('분석') ? 'tip' : ''}">${esc(h)}</li>`).join('')}</ul>` : ''}
-      <div id="gwrap"></div>`);
+        <div class="zones">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map((z) => `<button class="zone ${allowed.includes(z) ? '' : 'off'}" data-z="${z}" ${allowed.includes(z) ? '' : 'disabled'}></button>`).join('')}</div>
+        <div class="mtag">${title}</div></div>
+      <p class="situ" id="msg">${type === 'chip' ? '골키퍼 머리 위, 위쪽 칸 중 하나를 고르기' : '어디로 찰까? 골문을 눌러 조준'}</p>
+      <div id="ctl"></div>`);
     const cv = $app.querySelector('#goal');
-    const draw = (extra) => PX.drawGoal(cv, Object.assign({ keeper, keeperKey, gk: { x: 48, y: 46 } }, extra), 4);
-    draw({ ball: mode === 'shot' ? [48, 53, 3] : null });
-    const zb = await waitTap('[data-z]');
-    const zone = +zb.dataset.z;
+    const st = { keeper, keeperKey, gk: { x: 48, y: 46 }, crowd, shooter, shooterX: 18, shooterY: 10, ball: [40, 52, 3] };
+    let stopIdle = loop((t) => {
+      st.crowd.t = t;
+      st.gk.x = 48 + Math.sin(t / (type === 'pk' ? 260 : 600)) * (type === 'pk' ? 4 : 1.5);
+      PX.drawGoal(cv, st, 4);
+    });
+    const zb = await waitTap('[data-z]:not([disabled])');
+    const aim = +zb.dataset.z;
     Sound.play('click');
     $app.querySelectorAll('.zone').forEach((b) => b.classList.toggle('on', b === zb));
-    draw({ zone, ball: mode === 'shot' ? [48, 53, 3] : null });
-    $app.querySelector('#msg').textContent = mode === 'shot' ? '바늘이 가운데 칸에 올 때 누르기' : '슛 순간에 맞춰 누르기';
-    $app.querySelector('#gwrap').innerHTML = gaugeHtml(sp.width, mode === 'shot' ? (sp.type === 'header' ? '헤더!' : '슛!') : '다이빙!');
-    const period = mode === 'shot' ? 900 / (1 + (sp.press || 0) * 0.25) / ({ header: 1.2, volley: 1.25 }[sp.type] || 1) : 760;
-    const stop = runGauge($app.querySelector('#gauge'), period);
-    await waitTap('#go, #gauge');
-    const timing = stop();
-    $app.querySelector('#gauge').classList.add(timing >= 1 - sp.width ? 'hit' : 'miss');
+    st.zone = aim;
+    const [tx, ty] = PX.zoneCenter(aim);
+    const w = sp.width;
+    const ctl = $app.querySelector('#ctl'), msg = $app.querySelector('#msg');
+    let timing = 0;
+
+    if (mech === 'charge') {
+      msg.textContent = '버튼을 꾹 누르고 있다가 초록 칸에서 떼기';
+      const target = 0.78;
+      ctl.innerHTML = `<div class="power"><div class="sweet" style="left:${(target - w / 2) * 100}%;width:${w * 100}%"></div><i id="pw"></i></div>
+        <button class="btn primary center big hold" id="hold">꾹 눌러서 힘 모으기</button>`;
+      const pw = $app.querySelector('#pw'), hold = $app.querySelector('#hold');
+      timing = await new Promise((res) => {
+        let v = 0, stop = null, start = 0;
+        const down = (e) => {
+          e.preventDefault();
+          if (stop) return;
+          start = performance.now();
+          hold.textContent = '떼면 찬다';
+          stop = loop((t) => { const ph = (t / 900) % 2; v = ph < 1 ? ph : 2 - ph; pw.style.width = (v * 100) + '%'; st.shooterY = 10 - v * 2; });
+        };
+        const up = (e) => {
+          e.preventDefault();
+          if (!stop) { down(e); }
+          if (performance.now() - start < 60 && !e.forceRelease) { setTimeout(() => up(Object.assign({ preventDefault() {} }, { forceRelease: true })), 120); return; }
+          stop(); hold.onpointerdown = hold.onpointerup = hold.onpointerleave = null;
+          res(Math.max(0, 1 - Math.abs(v - target) * 2));
+        };
+        hold.onpointerdown = down;
+        hold.onpointerup = up;
+        hold.onpointerleave = (e) => { if (stop) up(e); };
+      });
+    } else if (mech === 'curve') {
+      msg.textContent = '휘어지는 궤적 끝이 노린 칸에 닿을 때 누르기';
+      ctl.innerHTML = '<button class="btn primary center big" id="go">감아 찬다!</button>';
+      let ex = GX0;
+      const gw = GX1 - GX0;
+      const stopC = loop((t) => {
+        const ph = (t / 1100) % 2;
+        const u = ph < 1 ? ph : 2 - ph;
+        ex = GX0 + u * gw;
+        const pts = [];
+        for (let i = 0; i <= 24; i++) {
+          const k = i / 24;
+          const cx = 40 + (ex - 40) * k + Math.sin(k * Math.PI) * (ex > 48 ? -14 : 14);
+          const cy = 52 + (ty - 52) * k;
+          pts.push([cx, cy]);
+        }
+        st.trail = pts; st.trailEnd = true;
+      });
+      await waitTap('#go');
+      stopC();
+      timing = Math.max(0, 1 - Math.abs(ex - tx) / (gw / 2));
+    } else if (mech === 'ring') {
+      msg.textContent = '줄어드는 원이 안쪽 원과 겹칠 때 누르기';
+      ctl.innerHTML = '<button class="btn primary center big" id="go">헤더!</button>';
+      let r = 18;
+      const ringCv = document.createElement('div');
+      ringCv.className = 'ring';
+      const gv = $app.querySelector('.goalview');
+      gv.appendChild(ringCv);
+      ringCv.style.left = (tx / GW * 100) + '%';
+      ringCv.style.top = (ty / 56 * 100) + '%';
+      ringCv.innerHTML = '<i class="outer"></i><i class="inner"></i>';
+      const outer = ringCv.querySelector('.outer');
+      const stopR = loop((t) => { r = 18 - ((t / 950) % 1) * 18; outer.style.width = outer.style.height = (r * 2 * 4) + 'px'; });
+      await waitTap('#go');
+      stopR();
+      timing = Math.max(0, 1 - Math.abs(r - 4) / 14);
+      ringCv.remove();
+    } else {
+      msg.textContent = '골키퍼가 달려 나온다. 충분히 가까워졌을 때 누르기';
+      ctl.innerHTML = '<button class="btn primary center big" id="go">칩슛!</button>';
+      let scl = 1;
+      stopIdle();
+      const stopU = loop((t) => {
+        const u = Math.min(1, t / 1300);
+        scl = 1 + u * 1.1;
+        st.crowd.t = t;
+        st.gk = { x: 48, y: 46 + u * 8, scale: scl };
+        PX.drawGoal(cv, st, 4);
+      });
+      stopIdle = stopU;
+      const tapped = await Promise.race([waitTap('#go').then(() => true), wait(1500).then(() => false)]);
+      $app.onclick = null;
+      timing = tapped ? Math.max(0, 1 - Math.abs(scl - 1.75) / 0.6) : 0.05;
+    }
+    stopIdle();
+    msg.textContent = quality(timing, w);
+    msg.classList.add(timing >= 1 - w ? 'hit' : 'miss');
     Sound.play('kick');
-    await wait(380);
-    return mode === 'shot' ? { aim: zone, timing } : { zone, timing };
+    await wait(420);
+    return { aim, timing };
   }
+
+  async function diveScreen(d) {
+    const sp = d.spec;
+    const keeper = spec('stand'), keeperKey = 'me' + G.p.look.skin + G.p.look.hairStyle + G.p.look.hairColor + G.p.club;
+    const c = d.fx.oppId && D.CLUBS[d.fx.oppId];
+    const oppKit = c ? kitFor(c.id) : { primary: '#1F4E9C', secondary: '#F2EBDD', pattern: 'solid', shorts: '#F2EBDD', socks: '#1F4E9C' };
+    const shooterCv = PX.playerBackCanvas({ skin: 2, hairStyle: 2, hairColor: 0, kit: oppKit }, 9, 1);
+    const crowd = crowdOf(d.fx);
+    render(`${chanceHead(Object.assign({}, cur, d))}
+      ${d.lead ? `<p class="lead">${esc(d.lead)}</p>` : ''}
+      <div class="goalview"><canvas id="goal"></canvas>
+        <div class="zones">${[0, 1, 2, 3, 4, 5, 6, 7, 8].map((z) => `<button class="zone" data-z="${z}"></button>`).join('')}</div>
+        <div class="mtag">${sp.dist === 'pk' ? '페널티킥 선방' : '선방'}</div></div>
+      <p class="situ" id="msg">키커가 달려온다. 차기 직전에 몸을 날릴 칸을 누르기</p>
+      ${d.hints ? `<ul class="hints">${d.hints.map((h) => `<li class="${h.startsWith('분석') ? 'tip' : ''}">${esc(h)}</li>`).join('')}</ul>` : ''}
+      <div class="runup"><i id="ru"></i></div>`);
+    const cv = $app.querySelector('#goal');
+    const ru = $app.querySelector('#ru');
+    const st = { keeper, keeperKey, gk: { x: 48, y: 46 }, crowd, ball: [48, 50, 2] };
+    const T = 1500;
+    let prog = 0;
+    const stop = loop((t) => {
+      prog = t / T;
+      st.crowd.t = t;
+      const k = Math.min(1, prog);
+      st.shooter = shooterCv; st.shooterX = 30 + k * 10; st.shooterY = 16 - k * 10;
+      st.ball = [48, 48, 2];
+      st.gk.x = 48 + Math.sin(t / 180) * 2;
+      ru.style.width = Math.min(100, k * 100) + '%';
+      PX.drawGoal(cv, st, 4);
+    });
+    const res = await Promise.race([waitTap('[data-z]').then((b) => ({ zone: +b.dataset.z, p: prog })), wait(T * 1.12).then(() => null)]);
+    $app.onclick = null;
+    stop();
+    let zone = 4, timing = 0;
+    if (res) { zone = res.zone; timing = res.p <= 1 ? res.p : Math.max(0, 1 - (res.p - 1) * 6); }
+    $app.querySelectorAll('.zone').forEach((b) => b.classList.toggle('on', +b.dataset.z === zone));
+    const msg = $app.querySelector('#msg');
+    msg.textContent = res ? (timing >= 1 - sp.width ? '타이밍 완벽!' : timing < 0.6 ? '너무 일찍 움직였다' : '조금 일렀다') : '반응하지 못했다';
+    msg.classList.add(timing >= 1 - sp.width ? 'hit' : 'miss');
+    await wait(380);
+    return { zone, timing };
+  }
+
+  // 화면 전체 축하 연출
+  function celebrate(word, line, colors, big) {
+    return new Promise((res) => {
+      const o = document.createElement('div');
+      o.className = 'celebrate' + (big ? ' big' : '') + (word.length > 3 ? ' long' : '');
+      o.innerHTML = `<canvas></canvas><div class="cb-word">${word}</div><div class="cb-line">${esc(line)}</div>`;
+      document.body.appendChild(o);
+      $app.classList.add('shake');
+      const cv = o.querySelector('canvas');
+      cv.width = Math.min(innerWidth, 480); cv.height = innerHeight;
+      const ctx = cv.getContext('2d');
+      const bits = Array.from({ length: big ? 90 : 50 }, () => ({ x: Math.random() * cv.width, y: -Math.random() * cv.height * 0.6, v: 2 + Math.random() * 4, s: 4 + Math.floor(Math.random() * 3) * 2, c: colors[Math.floor(Math.random() * colors.length)], w: Math.random() * 6 }));
+      const stop = loop((t) => {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        bits.forEach((b) => { b.y += b.v; b.x += Math.sin((t + b.w * 300) / 300) * 0.8; ctx.fillStyle = b.c; ctx.fillRect(Math.round(b.x), Math.round(b.y), b.s, b.s); });
+      });
+      setTimeout(() => $app.classList.remove('shake'), 500);
+      const end = () => { stop(); o.remove(); res(); };
+      o.onclick = end;
+      setTimeout(end, big ? 2100 : 1600);
+    });
+  }
+  const LINES = {
+    goal: (n) => [`들어갑니다아아아!`, `${n}! ${n}이(가) 해냅니다!`, '골! 골! 골!', '그물이 찢어질 것 같습니다!', '이게 들어가네요!'],
+    wonder: (n) => ['말도 안 됩니다! 이걸 넣어요!', `${n}, 오늘의 골 확정입니다!`, '관중석이 무너집니다!'],
+    assist: () => ['완벽한 패스!', '떠먹여 줍니다!', '보고도 믿기 어려운 패스!'],
+    save: (n) => ['막아냅니다!', '슈퍼 세이브!', `${n}의 손끝이 팀을 살립니다!`],
+    tackle: () => ['깔끔한 태클!', '공만 걷어냅니다!'],
+  };
+  const pickLine = (k) => { const a = LINES[k](G.p.name); return a[Math.floor(Math.random() * a.length)]; };
 
   async function tackleScreen(d) {
     const sp = d.spec;
@@ -595,7 +845,8 @@
       const gkRow = mine ? Math.floor(o.zone / 3) : 1;
       const gx = gkCol == null ? 48 : PX.zoneCenter(gkCol)[0];
       const dive = gkCol === 0 ? -1 : gkCol === 2 ? 1 : 0;
-      const t0 = performance.now(), T = 620;
+      const t0 = performance.now(), T = o.goal ? 900 : 640;
+      const trailPts = [];
       await new Promise((res) => {
         const frame = (now) => {
           const t = Math.min(1, (now - t0) / T);
@@ -603,7 +854,8 @@
           let bx = lerp(48, tx, bt), by = lerp(54, ty, bt);
           if (o.saved && t > 0.8) { bx = lerp(tx, tx + (tx < 48 ? -10 : 10), (t - 0.8) * 5); by = lerp(ty, ty + 8, (t - 0.8) * 5); }
           const gy = 46 - (dive === 0 ? (gkRow === 0 ? 10 : gkRow === 1 ? 4 : 0) * Math.min(1, t * 2) : 0);
-          PX.drawGoal(cv, { keeper, keeperKey, gk: { x: lerp(48, gx + (dive ? dive * -6 : 0), Math.min(1, t * 1.6)), y: gy + (dive && gkRow === 2 ? 0 : dive ? -6 * Math.min(1, t * 2) : 0), dive, t: Math.min(1, t * 1.8) },
+          trailPts.push([bx, by]);
+          PX.drawGoal(cv, { crowd: Object.assign(crowdOf(d.fx), { t: now, cheer: t > 0.9 && (o.goal || o.saved) }), trail: trailPts.slice(-14), keeper, keeperKey, gk: { x: lerp(48, gx + (dive ? dive * -6 : 0), Math.min(1, t * 1.6)), y: gy + (dive && gkRow === 2 ? 0 : dive ? -6 * Math.min(1, t * 2) : 0), dive, t: Math.min(1, t * 1.8) },
             ball: [bx, by, lerp(4, 2, bt)], shake: (o.goal && t > 0.9) ? 1 : 0 }, 4);
           if (t < 1) requestAnimationFrame(frame); else res();
         };
@@ -612,9 +864,51 @@
     } else {
       PX.drawPitch($app.querySelector('#pitch'), cur && cur.pitch ? cur.pitch : { me: [48, 36] }, 4);
     }
-    if (e.goal || e.assist || e.teamGoal) Sound.play('goal');
-    else if (e.saved) Sound.play('save');
+    const colors = d.fx.intl ? ['#C8352B', '#1F4E9C', '#F2EBDD'] : D.CLUBS[G.season.club].colors.concat(['#F2EBDD']);
+    if (e.goal) { Sound.play('goal'); await celebrate('골!', pickLine(e.wonder ? 'wonder' : 'goal'), colors, e.wonder || d.fx.final); }
+    else if (e.assist) { Sound.play('goal'); await celebrate('도움!', pickLine('assist'), colors); }
+    else if (e.saved) { Sound.play('save'); await celebrate('선방!', pickLine('save'), colors); }
+    else if (e.defended && e.big) { Sound.play('kick'); await celebrate('차단!', pickLine('tackle'), colors); }
+    else if (e.teamGoal) Sound.play('goal');
     else if (bad || e.missed || e.saved0) Sound.play('groan');
+    await choose();
+  }
+
+  // ── 해금·각성·이적 발표
+  async function unlockScreen(d) {
+    const trait = d.kind === 'trait';
+    render(`${top(trait ? '특성 해금' : '이정표', `${G.year} 시즌`)}
+      <div class="unlock ${trait ? 'trait' : 'ms'}"><div class="kicker">${trait ? '새 특성' : '기록 달성'}</div>
+        <span data-px="trophy" data-name="${trait ? 'keeper' : 'league'}" data-scale="4"></span>
+        <h2>${esc(d.title)}</h2><p>${esc(d.desc)}</p></div>${next()}`);
+    if (trait) await celebrate(d.title, '특성 해금', ['#E0C341', '#F2EBDD', '#C8352B'], false);
+    else Sound.play('goal');
+    await choose();
+  }
+  async function awakenScreen(d) {
+    const p = G.p;
+    const bar = (k, g) => `<div class="attr"><span class="lab">${SIM.ATTR_NAMES[k]}</span><span class="bar"><i class="grow" style="width:${p.attrs[k]}%"></i></span><span class="n">+${g.toFixed(1)}</span></div>`;
+    render(`${top('각성', `${G.year} 시즌`)}
+      <div class="unlock awaken"><div class="kicker">${esc(d.vs)}전 평점 ${d.rating.toFixed(1)}</div>
+        <span data-px="player" data-pose="sky" data-scale="4"></span>
+        <h2>무언가 깨어났다</h2><p>그 경기 이후로 몸이 다르게 움직인다.</p>
+        ${bar(d.a, d.ga)}${bar(d.b, d.gb)}
+        <div class="ovrline">OVR <b>${d.before}</b> → <b class="red pop">${d.after}</b></div></div>${next()}`);
+    await celebrate('각성!', `${p.name}, 한 단계 올라섰다`, ['#E0C341', '#C8352B', '#F2EBDD'], true);
+    await choose();
+  }
+  async function signedScreen(d) {
+    const c = D.CLUBS[d.club];
+    const sp = Object.assign({}, G.p.look, { kit: kitFor(c.id, G.p.pos === 'GK'), gk: G.p.pos === 'GK' });
+    render(`${top('오피셜', leagueName(c.id))}
+      <div class="signed"><div class="stamp">OFFICIAL</div>
+        <span data-px="badge" data-club="${c.id}" data-scale="5"></span>
+        <h2>${esc(c.name)}</h2>
+        <div class="row" style="justify-content:center;gap:18px;margin:10px 0">
+          <span data-px="player" data-pose="plane" data-scale="4" data-spec='${JSON.stringify(sp)}'></span>
+          <div class="bignum"><span>등번호</span><b>${d.number}</b></div></div>
+        <p>${d.kind === 'loan' ? '1년 임대' : `${d.years}년 계약`} · ${esc(d.role || '')}</p></div>${next('새 팀으로')}`);
+    await celebrate('오피셜', `${G.p.name}, ${c.name} 입단`, c.colors.concat(['#F2EBDD']), true);
     await choose();
   }
 
@@ -768,8 +1062,8 @@
   const io = {
     async ask(type, d) {
       if (type === 'beat') return beatScreen(d);
-      if (type === 'shot') return aimScreen(d, 'shot');
-      if (type === 'dive') return aimScreen(d, 'dive');
+      if (type === 'shot') return shotScreen(d);
+      if (type === 'dive') return diveScreen(d);
       if (type === 'tackle') return tackleScreen(d);
       if (type === 'event') return eventScreen(d);
       if (type === 'offers') return offersScreen(d);
@@ -779,7 +1073,12 @@
     async show(type, d) {
       switch (type) {
         case 'chanceEnd': return chanceEndScreen(d);
-        case 'week': return weekScreen(d);
+        case 'week':
+          if (turn) { turn.results.push(...d.results); const inj = d.results.find((r) => r.injured); if (inj) turn.injuredAt = inj.injured; return; }
+          return weekScreen(d);
+        case 'unlock': return unlockScreen(d);
+        case 'awaken': return awakenScreen(d);
+        case 'signed': return signedScreen(d);
         case 'eventResult': return messageScreen('그 뒤', d.title, esc(d.text));
         case 'callup':
           if (d.kind === 'A') return messageScreen('대한축구협회', d.tour ? `${d.tour} 최종 명단` : 'A대표팀 소집', d.first ? '처음으로 A대표팀 명단에 이름이 올랐다. 휴대폰이 쉬지 않고 울렸다.' : '이번에도 명단에 들었다.');

@@ -1,0 +1,19 @@
+<!doctype html><meta charset="utf-8">
+<body style="margin:0;background:#F2EBDD">
+<div id="out" style="display:flex;flex-wrap:wrap;gap:8px;padding:12px"></div>
+<script src="../js/pixel/core.js"></script>
+<script src="../js/pixel/player.js"></script>
+<script>
+const out = document.getElementById('out');
+const kits = [
+  { primary:'#1D4E9E', secondary:'#F2C230', pattern:'solid', shorts:'#1D4E9E', socks:'#1D4E9E' },
+  { primary:'#C8352B', secondary:'#1E1E1E', pattern:'vstripe', shorts:'#1E1E1E', socks:'#1E1E1E' },
+  { primary:'#2F6B3A', secondary:'#F2EBDD', pattern:'hstripe', shorts:'#F2EBDD', socks:'#2F6B3A' },
+  { primary:'#F2EBDD', secondary:'#C8352B', pattern:'half', shorts:'#F2EBDD', socks:'#C8352B' },
+];
+const add = (spec) => out.appendChild(PX.playerCanvas(spec, 6));
+for (let i = 0; i < 6; i++) add({ skin: i % 4, hairColor: i, hairStyle: i, kit: kits[i % 4] });
+add({ skin:1, hairColor:0, hairStyle:1, kit:{primary:'#E0C341',secondary:'#1E1E1E',pattern:'solid',shorts:'#1E1E1E',socks:'#E0C341'}, gk:true });
+['fist','plane','sky'].forEach((p) => [0,1].forEach((f) => add({ skin:0, hairColor:2, hairStyle:0, kit: kits[1], pose:p, frame:f })));
+add({ skin:2, hairColor:0, hairStyle:2, kit:kits[0], pose:'sky', frame:0, gk:true });
+</script>

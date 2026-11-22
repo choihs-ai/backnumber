@@ -12,11 +12,22 @@
     return [GOAL.x0 + w * (c + 0.5), GOAL.y0 + h * (r + 0.5)];
   };
 
-  function back(ctx) {
-    // 관중석 띠와 광고판 대신 단색 벽, 그 아래 잔디
-    ctx.fillStyle = '#26402C'; ctx.fillRect(0, 0, GW, GH);
-    for (let y = 0; y < 6; y++) for (let x = 0; x < GW; x += 2) { ctx.fillStyle = (x * 7 + y * 13) % 5 ? '#2F4D35' : '#3B5E41'; ctx.fillRect(x + (y % 2), y, 1, 1); }
-    ctx.fillStyle = '#1E1E1E'; ctx.fillRect(0, 6, GW, 1);
+  function back(ctx, crowd) {
+    // 관중석: 머리 2x2가 두 줄. 환호하면 번갈아 튀어 오른다
+    ctx.fillStyle = '#1F2E23'; ctx.fillRect(0, 0, GW, GH);
+    const cols = (crowd && crowd.colors) || ['#C8352B', '#F2EBDD', '#1F4E9C', '#E0C341'];
+    const t = (crowd && crowd.t) || 0, cheer = crowd && crowd.cheer;
+    for (let row = 0; row < 2; row++)
+      for (let x = (row ? 1 : 0); x < GW; x += 3) {
+        const seed = (x * 31 + row * 17) % 97;
+        const hop = cheer && ((Math.floor(t / 120) + seed) % 2 === 0) ? -1 : 0;
+        ctx.fillStyle = cols[seed % cols.length];
+        ctx.fillRect(x, 1 + row * 3 + hop, 2, 2);
+        ctx.fillStyle = '#C9A27E';
+        if (seed % 5 === 0) ctx.fillRect(x, 1 + row * 3 + hop - 1, 2, 1);
+      }
+    ctx.fillStyle = '#1E1E1E'; ctx.fillRect(0, 7, GW, 1);
+    ctx.fillStyle = '#26402C'; ctx.fillRect(0, 8, GW, 38);
     for (let y = 46; y < GH; y++) { ctx.fillStyle = (y >> 1) % 2 ? '#367643' : '#2F6B3A'; ctx.fillRect(0, y, GW, 1); }
     // 그물
     ctx.fillStyle = '#1F3324'; ctx.fillRect(GOAL.x0, GOAL.y0, GOAL.x1 - GOAL.x0 + 1, GOAL.y1 - GOAL.y0);
@@ -46,7 +57,7 @@
     base.width = GW; base.height = GH;
     const ctx = base.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    back(ctx);
+    back(ctx, state.crowd);
     if (state.zone != null) {
       const w = (GOAL.x1 - GOAL.x0) / 3, h = (GOAL.y1 - GOAL.y0) / 3;
       const c = state.zone % 3, r = Math.floor(state.zone / 3);
@@ -63,9 +74,23 @@
       ctx.save();
       ctx.translate(Math.round(g.x), Math.round(g.y));
       if (g.dive) ctx.rotate(g.dive * Math.PI / 2 * Math.min(1, g.t || 1));
-      ctx.drawImage(k, -12, -26);
+      const sc = g.scale || 1;
+      ctx.drawImage(k, -12 * sc, -26 * sc, 24 * sc, 26 * sc);
       ctx.restore();
     }
+    if (state.trail) {
+      state.trail.forEach(([x, y], i) => {
+        if (i % 2) return;
+        ctx.fillStyle = '#1E1E1E'; ctx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
+        ctx.fillStyle = '#F2EBDD'; ctx.fillRect(Math.round(x), Math.round(y), 1, 1);
+      });
+      if (state.trailEnd) {
+        const [x, y] = state.trail[state.trail.length - 1];
+        ctx.fillStyle = '#E0C341';
+        ctx.fillRect(Math.round(x) - 2, Math.round(y), 5, 1); ctx.fillRect(Math.round(x), Math.round(y) - 2, 1, 5);
+      }
+    }
+    if (state.shooter) ctx.drawImage(state.shooter, Math.round(state.shooterX || 30), GH - state.shooter.height + (state.shooterY || 8));
     if (state.ball) {
       const [x, y, r] = state.ball;
       const cx = Math.round(x), cy = Math.round(y), R = Math.max(1, Math.round(r));

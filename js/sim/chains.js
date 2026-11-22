@@ -21,7 +21,7 @@
     let off = corner ? (good ? 0.05 : 0.5) : center ? (good ? 0.01 : 0.1) : (good ? 0.03 : 0.27);
     off += { near: 0, edge: 0.04, far: 0.12 }[s.dist] || 0;
     off += { header: 0.08, volley: 0.1, power: 0.06, placed: -0.03, chip: 0.04, free: 0.06, pk: -0.02 }[s.type] || 0;
-    off += (s.angle === 'narrow' ? 0.08 : 0) + (s.press || 0) * 0.03 - (t - 0.5) * 0.08;
+    off += (s.angle === 'narrow' ? 0.08 : 0) + (s.press || 0) * 0.03 - (t - 0.5) * 0.08 - (s.sniper && s.dist === 'far' ? 0.06 : 0);
     const out = { aim, timing: t, good };
     if (chance(G, clamp(off, 0.005, 0.9))) {
       out.off = true;
@@ -117,7 +117,8 @@
     let mod = 0;
     if (c.tip === 'gkLow') mod += 0.02;
     if (G.p.flags.sharp > 0) mod += 0.03;
-    return Object.assign({ to: 'shot', opp: c.opp + 2, attr, width: SIM.sweetWidth(attr, mod - (s.press || 0) * 0.025 + (s.type === 'placed' ? 0.03 : 0) - (s.type === 'power' ? 0.02 : 0)), press: 0 }, s, { tip: c.tip });
+    mod += SIM.traitWidth(G, 'shot', s, c.fx);
+    return Object.assign({ to: 'shot', opp: c.opp + 2, attr, width: SIM.sweetWidth(attr, mod - (s.press || 0) * 0.025 + (s.type === 'placed' ? 0.03 : 0) - (s.type === 'power' ? 0.02 : 0)), press: 0 }, s, { tip: c.tip, sniper: SIM.has(G, 'sniper') });
   }
   // 동료 마무리
   function mateFinish(G, c, conv, text) {
@@ -125,8 +126,8 @@
     return { to: 'end', ok: true, text: pick(G, ['동료의 슛이 골키퍼에게 막혔다. 좋은 패스였다.', '동료의 슛이 살짝 빗나갔다.']) };
   }
   const lost = (G, c, t) => (chance(G, 0.1) ? { to: 'end', conceded: true, text: t + ' 역습으로 실점했다.' } : { to: 'end', lost: true, text: t });
-  const pass = (G, a, opp, bonus) => chance(G, sig((a.pas - opp) / 8 + bonus));
-  const beat = (G, a, opp, bonus) => chance(G, sig(((a.dri + a.spd) / 2 - opp) / 8 + bonus));
+  const pass = (G, a, opp, bonus) => chance(G, sig((a.pas - opp) / 8 + bonus + (SIM.has(G, 'maestro') ? 0.3 : 0)));
+  const beat = (G, a, opp, bonus) => chance(G, sig(((a.dri + a.spd) / 2 - opp) / 8 + bonus + (SIM.has(G, 'speedster') ? 0.3 : 0)));
 
   // 1) 역습
   B.counter1 = (G, c) => {
@@ -284,7 +285,7 @@
   // ── 수비
   function tackleStep(G, c, k) {
     const a = A(G.p);
-    return Object.assign({ to: 'tackle', attr: a.def, atk: c.atk, width: SIM.sweetWidth(a.def, (k.mod || 0) + (G.p.flags.sharp > 0 ? 0.03 : 0)) }, k);
+    return Object.assign({ to: 'tackle', attr: a.def, atk: c.atk, width: SIM.sweetWidth(a.def, (k.mod || 0) + (G.p.flags.sharp > 0 ? 0.03 : 0) + SIM.traitWidth(G, 'tackle', k, c.fx)) }, k);
   }
   B.d1v1 = (G, c) => ({
     text: '상대 윙어가 공을 몰고 1대1로 달려든다.',
@@ -350,7 +351,7 @@
   // ── 골키퍼
   function diveStep(G, c, d) {
     const a = A(G.p);
-    return Object.assign({ to: 'dive', attr: d.dist === 'pk' ? (a.ref + a.cal) / 2 : a.ref, shooter: c.atk, width: SIM.sweetWidth(a.ref, G.p.flags.sharp > 0 ? 0.03 : 0) }, d);
+    return Object.assign({ to: 'dive', attr: d.dist === 'pk' ? (a.ref + a.cal) / 2 : a.ref, shooter: c.atk, width: SIM.sweetWidth(a.ref, (G.p.flags.sharp > 0 ? 0.03 : 0) + SIM.traitWidth(G, 'dive', d, c.fx)) }, d);
   }
   B.g1v1 = (G, c) => {
     c.flags.v = pick(G, ['long', 'calm', 'fast']);
@@ -432,7 +433,10 @@
   SIM.chanceStart = function (G, fx) {
     const c = ctxFor(G, fx);
     c.atk = fx.oppStr + ri(G, -2, 6);
-    return { c, id: startBeat(G) };
+    const id = startBeat(G);
+    // 공격 분석 힌트는 공격 장면에서만
+    if (/^(g|d)/.test(id) && id !== 'setHeader') c.tip = id.startsWith('d') && chance(G, 0.5) ? 'leftWeak' : null;
+    return { c, id };
   };
   SIM.chanceBeat = (G, c, id) => B[id](G, c);
 
@@ -462,11 +466,25 @@
   // 끝맺음을 경기 기록에 반영. 돌려주는 값은 득실 점수(테스트용)
   SIM.chanceApply = function (G, res, end, mini) {
     let delta = 0, ok = false;
-    if (end.goal) { res.gm++; res.goals++; delta += 0.2 + (end.wonder ? 0.3 : 0); ok = true; if (end.wonder) G.p.pop = clamp(G.p.pop + 4, 0, 100); }
+    if (end.goal) {
+      res.gm++; res.goals++; delta += 0.2 + (end.wonder ? 0.3 : 0); ok = true;
+      if (end.wonder) G.p.pop = clamp(G.p.pop + 4, 0, 100);
+      const t = mini && mini.spec;
+      if (t && SIM.stat) {
+        if (t.type === 'free') SIM.stat(G, 'fkGoals');
+        if (t.type === 'pk') SIM.stat(G, 'pkGoals');
+        if (t.type === 'header') SIM.stat(G, 'headGoals');
+        if (t.dist === 'far') SIM.stat(G, 'longGoals');
+      }
+    }
     else if (end.assist) { res.gm++; res.assists++; delta += 0.25; ok = true; }
     else if (end.teamGoal) { res.gm++; ok = true; }
     if (end.conceded) { res.go++; delta -= 0.3; }
-    if (end.saved) { res.saves++; delta += 0.45; ok = true; }
+    if (end.saved) {
+      res.saves++; delta += 0.45; ok = true;
+      if (mini && mini.kind === 'dive' && SIM.stat) { SIM.stat(G, 'sceneSaves'); if (mini.spec.dist === 'pk') SIM.stat(G, 'pkSaves'); }
+    }
+    if (mini && mini.kind === 'tackle' && mini.out.won && SIM.stat) SIM.stat(G, 'tackles');
     if (end.defended) { delta += end.big ? 0.4 : 0.25; ok = true; }
     if (end.ok) { delta += end.small ? 0.05 : 0.1; ok = true; }
     if (end.lost) delta -= 0.15;

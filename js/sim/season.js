@@ -71,7 +71,7 @@
       cup: { alive: true, round: '', won: false },
       cont: qualifiesCont(club) ? { alive: true, gp: 0, pts: 0, stage: '조별리그', won: false } : null,
       intl: { caps: 0, goals: 0 },
-      trophies: [], awards: [], log: [], bigLeft: 2, firstMatch: !!p.flags.newClub, called: false,
+      trophies: [], awards: [], log: [], bigLeft: 1, sceneBudget: 2, firstMatch: !!p.flags.newClub, called: false,
       prevNo: p.squadNo,
     });
     p.flags.newClub = false;
@@ -144,12 +144,12 @@
         const o = SIM.weighted(G, contPool(club), (c) => Math.exp((c.str - myStr + (isGroup ? -2 : 3)) / 4));
         const name = D.CONTINENTAL[lg.cont].short;
         out.push({ comp: 'cont', opp: o.name, oppId: o.id, oppStr: o.str + gauss(G), myStr, home: chance(G, 0.5), round: `${name} ${st}`, ko: !isGroup, final: st === '결승',
-          important: !isGroup, tag: !isGroup ? `${name} ${st}` : undefined });
+          important: st === '4강' || st === '결승', tag: !isGroup ? `${name} ${st}` : undefined });
       }
     }
     if (S.called && INTL_WINDOWS.includes(w)) {
       for (let i = 0; i < 2; i++) {
-        const fx = nationFx(G, NATIONS_A, Object.keys(NATIONS_A), '평가전', 'intl', i === 0);
+        const fx = nationFx(G, NATIONS_A, Object.keys(NATIONS_A), '평가전', 'intl', false);
         fx.myStr = KOREA.A; fx.tag = i === 0 ? 'A매치' : undefined;
         out.push(fx);
       }
@@ -195,9 +195,12 @@
     p.work = clamp((p.work || 0) + dw, -5, 5);
     const ovr = SIM.ovr(p);
     const age = p.age;
-    const ageC = age <= 19 ? 1 : age <= 23 ? 0.8 : age <= 27 ? 0.4 : age <= 30 ? 0.12 : 0;
-    const gap = clamp((p.pot + p.work - ovr) / 20, 0.08, 1);
-    const base = 0.4 * ageC * gap * (1 + 0.5 * minsRatio);
+    // 몸(스피드·피지컬·반사)은 20대 초반에 정점, 기술은 서른 전후까지 천천히 오른다
+    const physC = age <= 19 ? 1 : age <= 23 ? 0.8 : age <= 26 ? 0.35 : age <= 28 ? 0.12 : 0;
+    const techC = age <= 19 ? 0.9 : age <= 23 ? 0.8 : age <= 27 ? 0.55 : age <= 30 ? 0.4 : age <= 32 ? 0.2 : 0.05;
+    const exp = Math.min(3, ((p.stats && p.stats.bigGames) || 0) / 15);
+    const gap = clamp((p.pot + p.work + exp - ovr) / 20, 0.1, 1);
+    const base = 0.4 * gap * (1 + 0.5 * minsRatio);
     const w = SIM.WEIGHTS[p.pos];
     const keys = SIM.attrKeys(p);
     let gains = {};
@@ -210,20 +213,21 @@
       else if (action === 'video' || action === 'sns' || action === 'mental' || action === 'setpiece') m = 0.3 * (0.6 + 2.4 * w[k]);
       // 경기만 뛰어도 조금은 큰다
       m += 0.25 * minsRatio;
-      const g = base * m * (0.85 + 0.3 * SIM.rnd(G));
+      const ageC = PHYS.includes(k) ? physC : techC;
+      const g = base * ageC * m * (0.85 + 0.3 * SIM.rnd(G));
       if (g > 0) { SIM.addAttr(p, k, g); gains[k] = g; }
     });
     return gains;
   }
 
+  const PHYS = ['spd', 'phy', 'ref', 'one'];
   function decline(G) {
     const p = G.p;
-    if (p.age < 31) return;
-    const hard = p.age >= 34 ? 1.8 : 1;
-    const care = p.flags.bodyCare ? 0.75 : 1;
+    if (p.age < 30) return;
+    const care = (p.flags.bodyCare ? 0.75 : 1) * (SIM.has(G, 'late_bloomer') ? 0.7 : 1);
     SIM.attrKeys(p).forEach((k) => {
-      const fast = ['spd', 'phy', 'ref', 'one'].includes(k);
-      SIM.addAttr(p, k, -(fast ? 1.6 + SIM.rnd(G) * 1.6 : 0.4 + SIM.rnd(G)) * hard * care);
+      if (PHYS.includes(k)) SIM.addAttr(p, k, -(1.2 + SIM.rnd(G) * 1.4) * (p.age >= 33 ? 1.6 : 1) * care);
+      else if (p.age >= 33) SIM.addAttr(p, k, -(0.3 + SIM.rnd(G) * 0.8) * (p.age >= 35 ? 1.6 : 1) * care);
     });
   }
 
@@ -297,15 +301,20 @@
     }
     if (played) {
       S.sceneN += res.sceneN; S.sceneOk += res.sceneOk;
-      if (fx.important) p.mental = clamp(p.mental + (p.flags.captain ? 0.7 : 0.4), 0, 99);
+      if (fx.important) { p.mental = clamp(p.mental + (p.flags.captain ? 0.7 : 0.4), 0, 99); SIM.stat(G, 'bigGames'); }
+      if (res.goals && (fx.ko || fx.final)) SIM.stat(G, 'koGoals', res.goals);
+      if (res.goals && fx.comp === 'tour' && fx.ko) SIM.stat(G, 'intlKoGoals', res.goals);
+      if (res.goals && p.flags.bigInjury) { SIM.stat(G, 'bigInjuryComeback'); p.flags.bigInjury = false; }
       p.fatigue = clamp(p.fatigue + (res.role === 'start' ? 3 : 1), 0, 100);
       if (SIM.isPro(G) && !fx.intl) p.debut = true;
-      const risk = 0.005 + Math.max(0, p.fatigue - 55) * 0.0012;
+      const risk = (0.005 + Math.max(0, p.fatigue - 55) * 0.0012) * (SIM.has(G, 'iron') ? 0.6 : 1);
       if (chance(G, risk)) {
         const wks = chance(G, 0.8) ? ri(G, 1, 3) : ri(G, 4, 8);
         p.injury = Math.max(p.injury, wks + 1);
         res.injured = wks;
         p.flags.lastInjury = wks;
+        S.injured = true;
+        if (wks >= 6) p.flags.bigInjury = true;
       }
     }
     // 승부차기
@@ -356,7 +365,7 @@
       const was = S.called;
       S.called = aCallScore(G) >= 73 || p.flags.surpriseCall;
       if (S.called && p.flags.surpriseCall) p.flags.surpriseCall = false;
-      if (S.called && !was && p.injury === 0) await io.show('callup', { kind: 'A', first: p.intl.caps === 0 });
+      if (S.called && !was && p.injury === 0 && p.intl.caps === 0) await io.show('callup', { kind: 'A', first: true });
       if (p.injury > 0) S.called = false;
     }
 
@@ -378,17 +387,19 @@
       record(G, res);
       results.push(res);
       if (!fx.intl) { mins += res.mins; possible += 90; }
+      await SIM.maybeAwaken(G, res, io);
     }
     const gains = grow(G, action, focusKey, possible ? mins / possible : 0, fatigueBefore);
 
     await SIM.maybeEvent(G, io);
+    await SIM.checkLegacy(G, io);
     await io.show('week', { week: G.week, results, action, gains });
 
     p.fatigue = clamp(p.fatigue - 12, 0, 100);
-    p.trust += ((p.flags.captain ? 62 : 50) - p.trust) * 0.03;
+    p.trust += ((p.flags.captain ? 62 : SIM.has(G, 'one_club') || SIM.has(G, 'leader') ? 58 : 50) - p.trust) * 0.03;
     if (p.injury > 0) p.injury = Math.max(0, p.injury - (action === 'rest' ? 2 : action === 'recovery' ? (chance(G, 0.5) ? 2 : 1) : 1));
     if (p.flags.sharp > 0) p.flags.sharp--;
-    p.pop = clamp(p.pop * 0.985, 0, 100);
+    p.pop = clamp(p.pop * 0.985, SIM.has(G, 'hero') ? 40 : 0, 100);
 
     if (p.military) {
       p.military.weeksLeft--;
@@ -440,7 +451,7 @@
   function playerValue(G) {
     const p = G.p;
     const avg = SIM.avg(G.season.ratings) || 6.6;
-    return SIM.ovr(p) + (avg - 6.7) * 6 + p.pop * 0.04 - Math.max(0, p.age - 28) * 1.5 + (p.age <= 21 ? 2 : 0);
+    return SIM.ovr(p) + (avg - 6.7) * 6 + p.pop * 0.04 - Math.max(0, p.age - 28) * 1.5 + (p.age <= 21 ? 2 : 0) + (SIM.has(G, 'wonderkid') ? 2 : 0);
   }
 
   function roleFor(ovr, club) {
@@ -468,7 +479,7 @@
       && value >= c.str - 2.5 && value <= c.str + 14);
     const scored = pool.map((c) => ({ c, s: c.rep + gauss(G) * 10 + (value - c.str) * 1.5 })).sort((a, b) => b.s - a.s);
     const hot = avg >= 7.1 || value >= cur.str + 3;
-    const n = (when === 'winter' ? ri(G, 1, 2) : hot ? ri(G, 2, 4) : ri(G, 0, 2)) + (p.flags.wantMove ? 1 : 0);
+    const n = (when === 'winter' ? ri(G, 1, 2) : hot ? ri(G, 2, 4) : ri(G, 0, 2)) + (p.flags.wantMove ? 1 : 0) + (SIM.has(G, 'journeyman') ? 1 : 0);
     const out = [], leagues = {};
     for (const { c } of scored) {
       if (out.length >= n) break;
@@ -573,6 +584,7 @@
     p.flags.captain = false; p.flags.taker = false;
     if (o.guarantee) p.flags.guarantee = true;
     p.flags.joinedYear = when === 'winter' ? G.year : G.year + 1;
+    await io.show('signed', { club: o.club, number: o.number, kind: o.kind, years: o.years, role: o.role, from: p.club });
     if (when === 'winter') changeClubMidSeason(G, o.club);
     else { p.club = o.club; p.flags.newClub = true; }
   }
@@ -693,13 +705,13 @@
     };
     let pts = 0;
     for (let i = 0; i < 3; i++) {
-      const r = await playOne('조별리그', i === 0, 0);
+      const r = await playOne('조별리그', false, 0);
       pts += r.gm > r.go ? 3 : r.gm === r.go ? 1 : 0;
     }
     if (pts >= t.groupNeed || (pts === 3 && chance(G, 0.35))) {
       for (let i = 0; i < t.ko.length; i++) {
         const round = t.ko[i];
-        const r = await playOne(round, true, i + 1);
+        const r = await playOne(round, ['4강', '결승'].includes(round), i + 1);
         const won = r.gm > r.go || r.pens === 'W';
         if (round === '결승') { medal = won ? '금' : '은'; finish = won ? '우승' : '준우승'; break; }
         if (!won) {
@@ -800,7 +812,8 @@
       name: p.name, pos: p.pos, look: p.look, from: 2027, to: G.year, age: p.age, why,
       apps: sum('apps'), goals: sum('goals'), assists: sum('assists'), caps: p.intl.caps, intlGoals: p.intl.goals,
       clubs, trophies: p.trophies.length, trophyList: p.trophies.slice(-12), awards: p.awards.length, ballonBest: best,
-      ballonWins: p.ballon.filter((b) => b.rank === 1).length, exempt: p.exempt, license: !!p.flags.license, captain: !!p.flags.captain, peak: Math.max(...p.career.map((c) => c.ovr)),
+      ballonWins: p.ballon.filter((b) => b.rank === 1).length, exempt: p.exempt, license: !!p.flags.license, captain: !!p.flags.captain,
+      traits: Object.keys(p.traits || {}).length, retiredNo: SIM.has(G, 'one_club') ? { club: SIM.club(p.club).name, no: p.squadNo } : null, peak: Math.max(...p.career.map((c) => c.ovr)),
     };
     await io.show('retire', G.hall);
   }
@@ -815,11 +828,12 @@
     if (S.cont && S.cont.won) trophy(G, `${D.CONTINENTAL[lg.cont].name} 우승`);
     leagueAwards(G);
 
+    if (p.flags.captain) SIM.stat(G, 'captainSeasons');
+    if (!S.injured && S.apps >= 10) SIM.stat(G, 'cleanSeasons');
     await io.show('seasonEnd', { rec: seasonRecord(G), S, rival: p.rival });
 
     for (const t of tournamentsFor(G)) {
       if (selected(G, t)) {
-        await io.show('callup', { kind: t.team, tour: t.name, first: t.team === 'A' && p.intl.caps === 0 });
         await playTournament(G, io, t);
       }
     }
@@ -833,7 +847,7 @@
     decline(G);
     p.mental = clamp(p.mental, 0, 99);
 
-    if (p.age >= 39) { await retire(G, io, '서른아홉. 몸이 먼저 말했다.'); return; }
+    if (p.age >= 38) { await retire(G, io, '서른여덟. 몸이 먼저 말했다.'); return; }
 
     if (enlist) {
       p.flags.enlistNow = false;

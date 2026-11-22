@@ -1,7 +1,7 @@
 // 테스트 도구 공통: 시뮬레이션 파일을 읽고, 화면 대신 대답해 주는 봇을 만든다.
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.join(__dirname, '..');
-const FILES = ['data/clubs.js', 'data/names.js', 'data/events.js', 'data/events2.js', 'js/sim/core.js', 'js/sim/match.js', 'js/sim/chains.js', 'js/sim/season.js', 'js/sim/events.js'];
+const FILES = ['data/clubs.js', 'data/names.js', 'data/events.js', 'data/events2.js', 'js/sim/core.js', 'js/sim/match.js', 'js/sim/chains.js', 'js/sim/season.js', 'js/sim/events.js', 'js/sim/legacy.js'];
 FILES.forEach((f) => vm.runInThisContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), { filename: f }));
 const SIM = globalThis.SIM, D = globalThis.DATA;
 
